@@ -1,95 +1,98 @@
-🟦 PHASE 1 — Project Setup
+PHASE 1 — Foundation (We are here)
 
-Step 1.1 — Install Python, VS Code, extensions
-Step 1.2 — Create virtual environment (Python's node_modules)
-Step 1.3 — Project folder structure
-Step 1.4 — Install all dependencies
-Step 1.5 — .env setup (API keys)
-Step 1.6 — Run your first Python file
-
-
-🟦 PHASE 2 — Data Layer (Real Market Data)
-
-Step 2.1 — Connect to yfinance (free real stock data)
-Step 2.2 — Fetch OHLCV data (Open, High, Low, Close, Volume)
-Step 2.3 — Calculate technical indicators (RSI, MACD, Bollinger Bands, EMA)
-Step 2.4 — Fetch real financial news via NewsAPI / Tavily
-Step 2.5 — Build a MarketDataTool class (reusable across agents)
+✅ Step 1: Python version check
+✅ Step 2: Create project folder
+✅ Step 3: Virtual environment
+✅ Step 4: Install dependencies
+✅ Step 5: Create project structure
+✅ Step 6: Open in VS Code
+⬜ Step 7: Fill in .env file
+⬜ Step 8: Write config.py
+⬜ Step 9: Verify all API keys live
 
 
-🟦 PHASE 3 — Tool/Function Calling Layer
+PHASE 2 — Market Data
 
-Step 3.1 — What is tool calling & why it matters
-Step 3.2 — Define typed tool schemas (like TypeScript interfaces)
-Step 3.3 — Build these tools:
-
-get_stock_data tool
-get_technical_indicators tool
-get_market_news tool
-calculate_risk_reward tool
+⬜ Step 10: Write tools/coingecko.py
+⬜ Step 11: Write tools/alpha_vantage.py
+⬜ Step 12: Write agents/market_data.py
+⬜ Step 13: Test — fetch live BTC + AAPL data
 
 
-Step 3.4 — Parallel tool execution with asyncio.gather() (like Promise.all)
-Step 3.5 — Structured error returns per tool
+PHASE 3 — Technical Analysis
+
+⬜ Step 14: Write tools/technical_indicators.py
+⬜ Step 15: Write agents/technical.py
+⬜ Step 16: Test — get RSI, MACD, Bollinger Bands on live data
 
 
-🟦 PHASE 4 — Build Each Agent
+PHASE 4 — Shared State + Memory
 
-Step 4.1 — Base Agent class (shared logic)
-Step 4.2 — Orchestrator Agent — parses query, builds task plan, routes agents
-Step 4.3 — Research Agent — calls tools, gathers raw stock + news data
-Step 4.4 — Analyst Agent — interprets data, finds patterns, calculates R/R
-Step 4.5 — Writer Agent — generates structured trading report (with streaming)
-Step 4.6 — Critic Agent — scores report quality, triggers revision if needed
-Step 4.7 — Critic revision loop with circuit breaker (max 3 revisions)
+⬜ Step 17: Write memory/state.py
+⬜ Step 18: Write memory/audit_log.py
+⬜ Step 19: Wire market + technical agents together in LangGraph
+⬜ Step 20: Test — full mini pipeline runs end to end
 
 
-🟦 PHASE 5 — Shared Memory & Audit Log
+PHASE 5 — Sentiment Agent
 
-Step 5.1 — What is shared memory in multi-agent systems
-Step 5.2 — Build AgentMemory class — stores context across all agent hops
-Step 5.3 — Full audit log — every agent decision recorded with timestamp
-Step 5.4 — Prevent duplicate work (if research done, skip re-fetch)
-Step 5.5 — Post-hoc debugging — replay any agent's decision
+⬜ Step 21: Write tools/newsapi.py
+⬜ Step 22: Write agents/sentiment.py
+⬜ Step 23: Test — Claude scores headlines as Bullish/Bearish/Neutral
 
 
-🟦 PHASE 6 — Observability Layer
+PHASE 6 — Risk + Decision
 
-Step 6.1 — What is observability & why it matters in production
-Step 6.2 — Distributed tracing — trace one full request across all agents
-Step 6.3 — Per-agent token tracking & cost calculation
-Step 6.4 — Success/failure rate tracking per agent
-Step 6.5 — Build a simple terminal dashboard (live stats)
-Step 6.6 — Request replay for debugging failed runs
+⬜ Step 24: Write agents/risk.py
+⬜ Step 25: Write agents/decision.py
+⬜ Step 26: Test — full signal with confidence score
 
 
-🟦 PHASE 7 — Streaming Support
+PHASE 7 — Alert Pipeline
 
-Step 7.1 — What is streaming & why it matters (400ms first token!)
-Step 7.2 — Add streaming to Writer Agent output
-Step 7.3 — Stream to terminal (we'll later connect to UI)
-
-
-🟦 PHASE 8 — Production Hardening
-
-Step 8.1 — Exponential backoff retry (transient vs permanent errors)
-Step 8.2 — Graceful degradation (if one agent fails, system continues)
-Step 8.3 — Context window management (auto summarize long conversations)
-Step 8.4 — Input validation with Pydantic (Python's Zod equivalent)
-Step 8.5 — Environment configs for dev vs prod
+⬜ Step 27: Write agents/writer.py
+⬜ Step 28: Write agents/notification.py
+⬜ Step 29: Write tools/telegram.py
+⬜ Step 30: Test — real alert lands on your phone
 
 
-🟦 PHASE 9 — Putting It All Together
+PHASE 8 — Orchestrator + Full Pipeline
 
-Step 9.1 — Wire all agents into one pipeline
-Step 9.2 — End-to-end test: "Analyze TSLA for swing trade opportunity"
-Step 9.3 — Sample outputs & report review
-Step 9.4 — Connect to your Gateway (Project 3) for cost control
-Step 9.5 — Final resume bullet polish with real metrics
+⬜ Step 31: Write agents/orchestrator.py
+⬜ Step 32: Wire all agents into LangGraph graph
+⬜ Step 33: Write main.py
+⬜ Step 34: Test — full end to end run on all 7 assets
 
 
-🟦 PHASE 10 — Optional: Simple FastAPI Web Interface
+PHASE 9 — Observability
 
-Step 10.1 — Expose the agent pipeline as a REST API
-Step 10.2 — Add a minimal frontend to submit queries
-Step 10.3 — Show streaming output in the browser
+⬜ Step 35: Write observability/cost_tracker.py
+⬜ Step 36: Write observability/tracer.py
+⬜ Step 37: Token usage + cost per run logged
+
+
+PHASE 10 — Scheduling
+
+⬜ Step 38: Set up n8n locally
+⬜ Step 39: Cron trigger every 15 minutes
+⬜ Step 40: Gmail daily summary report
+
+
+PHASE 11 — Backtesting
+
+⬜ Step 41: Write backtesting/backtest.py
+⬜ Step 42: Run signals against 90 days of historical data
+⬜ Step 43: Calculate accuracy, false positives, best settings
+
+
+PHASE 12 — Dashboard
+
+⬜ Step 44: Build simple dashboard in dashboard/app.py
+⬜ Step 45: Show signals, accuracy, cost per run, uptime
+
+
+PHASE 13 — Production
+
+⬜ Step 46: Push to GitHub
+⬜ Step 47: Deploy to Railway or Render
+⬜ Step 48: Monitor first 24 hours live
