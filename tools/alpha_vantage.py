@@ -1,4 +1,5 @@
 import requests
+import time
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -6,37 +7,42 @@ from config import ALPHA_VANTAGE_API_KEY
 
 BASE_URL = "https://www.alphavantage.co/query"
 
-def get_quote(symbol: str) -> dict:
-    params = {
-        "function": "GLOBAL_QUOTE", #this tells Alpha Vantage which data you want. Think of it like choosing from a menu. GLOBAL_QUOTE means "give me the current price snapshot for this stock."
-        "symbol": symbol,
-        "apikey": ALPHA_VANTAGE_API_KEY,
-    }
-    resp = requests.get(BASE_URL, params=params, timeout=15)
-    resp.raise_for_status()
 
-    #Alpha Vantage doesn't give you the percentage change directly like CoinGecko does. So we calculate it ourselves:
-    q = resp.json().get("Global Quote", {})
+def _get(params: dict, retries: int = 3) -> dict:
+    """
+    Makes the API call with automatic retry on timeout.
+    Tries up to 3 times before giving up.
+    """
+    params["apikey"] = ALPHA_VANTAGE_API_KEY
+    for attempt in range(retries):
+        try:
+            resp = requests.get(BASE_URL, params=params, timeout=30)
+            resp.raise_for_status()
+            return resp.json()
+        except requests.exceptions.Timeout:
+            print(f"  [AlphaVantage] Timeout on attempt {attempt + 1}/{retries}, retrying...")
+            time.sleep(2)
+        except Exception as e:
+            raise e
+    raise Exception(f"[AlphaVantage] Failed after {retries} attempts")
+
+
+def get_quote(symbol: str) -> dict:
+    data  = _get({"function": "GLOBAL_QUOTE", "symbol": symbol})
+    q     = data.get("Global Quote", {})
     price = float(q.get("05. price", 0))
-    prev = float(q.get("08. previous close", price))
-    change = ((price - prev) / prev *100) if prev else 0
+    prev  = float(q.get("08. previous close", price))
+    change = ((price - prev) / prev * 100) if prev else 0
     return {
-        "price_usd": price,
-        "volume_24h": float(q.get("06. volume", 0)), #Alpha Vantage doesn't provide volume data for stocks
+        "price_usd":        price,
+        "volume_24h":       float(q.get("06. volume", 0)),
         "price_change_24h": round(change, 2),
     }
 
+
 def get_ohlcv(symbol: str) -> list[dict]:
-    params = {
-        "function": "TIME_SERIES_DAILY",
-        "symbol": symbol,
-        "outputsize": "compact",
-        "apikey": ALPHA_VANTAGE_API_KEY,
-        
-    }
-    resp = requests.get(BASE_URL, params=params, timeout=15)
-    resp.raise_for_status()
-    ts = resp.json().get("Time Series (Daily)", {})
+    data    = _get({"function": "TIME_SERIES_DAILY", "symbol": symbol, "outputsize": "compact"})
+    ts      = data.get("Time Series (Daily)", {})
     candles = []
     for date_str, row in sorted(ts.items()):
         candles.append({
@@ -49,14 +55,16 @@ def get_ohlcv(symbol: str) -> list[dict]:
         })
     return candles
 
+
 def get_full_asset_data(symbol: str) -> dict:
     quote = get_quote(symbol)
+    time.sleep(1)
     ohlcv = get_ohlcv(symbol)
     return {
-        "symbol": symbol,
-        "asset_type": "stock",
-        "price": quote["price_usd"],
-        "volume_24h": quote["volume_24h"],
+        "symbol":           symbol,
+        "asset_type":       "stock",
+        "price":            quote["price_usd"],
+        "volume_24h":       quote["volume_24h"],
         "price_change_24h": quote["price_change_24h"],
-        "ohlcv": ohlcv,
+        "ohlcv":            ohlcv,
     }

@@ -1,12 +1,13 @@
 # typedict - lets define a dictionary with fixed keys and specific types, like a form with labeled fields.
 #optional - means a value can either be a specific type or none
 
-from typing import TypedDict, Optional
+from typing import TypedDict, Optional, Annotated
 from datetime import datetime
+from langgraph.graph import MessagesState
 
 #1. Market Agent
 #data structure for asset data: market agent fetches data and fill this details
-class AssetData(TypeDict):
+class AssetData(TypedDict):
     symbol: str
     asset_type: str #crypto, stock
     price: float #current price
@@ -59,45 +60,66 @@ class AlertMessage(TypedDict):
     action: str
     confidence: int
 
-class PipelineState(TypedDict):
-    #run into
-    run_id: str
-    triggered_at: str
+# class PipelineState(TypedDict):
+    # run into
+    # run_id: str
+    # triggered_at: str
+# 
+    # Market data
+    # all_assest_data: list[AssetData]
+    # top_opportunities: list[str]
+# 
+    # Analysis
+    # technical_signals: dict[str, TechnicalSignal]
+    # sentiment_results: dict[str, SentimentResult]
+# 
+    # Risk + Decision
+    # risk_check: Optional[RiskCheckResult]
+    # decision: Optional[DecisionResult]
+# 
+    # Alert
+    # alert_messages: Optional[AlertMessage]
+    # alert_sent: bool
+# 
+    # Observability
+    # errors: Annotated[list[str], operator.add]
+    # token_usage: dict[str, int]
+class PipelineState(dict):
+    """
+    Simple dict-based state that LangGraph passes fully between nodes.
+    No TypedDict — avoids LangGraph's partial state merging issue.
+    """
+    pass
 
-    #Market data
-    all_assest_data: list[AssetData]
-    top_opportunities: list[str]
-
-    #Analysis
-    technical_signals: dict[str, TechnicalSignal]
-    sentiment_results: dict[str, SentimentResult]
-
-    #Risk + Decision
-    risk_check: Optional[RiskCheckResult]
-    decision: Optional[DecisionResult]
-
-    #Alert
-    alert_messages: Optional[AlertMessage]
-    alert_sent: bool
-
-    #Observability
-    errors: list[str]
-    token_usage: dict[str, int]
-
-def initial_state(run_id: str) -> PipelineState:
-    """Returns a clean state for every new pipeline run."""
-    return PipelineState(
-        run_id=run_id,
-        triggered_at=datetime.utcnow().isoformat(),
-        all_assest_data=[],  #list []
-        top_opportunities=[],
-        technical_signals={}, #dictionary {}
-        sentiment_results={},
-        risk_check=None,
-        decision=None,
-        alert_messages=None, #objects are none
-        alert_sent=False,
-        errors=[],
-        token_usage={},
-    )
+def initial_state(run_id: str) -> dict:
+    return {
+        "run_id":             run_id,
+        "triggered_at":       datetime.utcnow().isoformat(),
+        "all_asset_data":     [],
+        "top_opportunities":  [],
+        "technical_signals":  {},
+        "sentiment_results":  {},
+        "risk_check":         None,
+        "decision":           None,
+        "alert_message":      None,
+        "alert_sent":         False,
+        "errors":             [],
+        "token_usage":        {},
+    }
+# def initial_state(run_id: str) -> PipelineState:
+    # """Returns a clean state for every new pipeline run."""
+    # return PipelineState(
+        # run_id=run_id,
+        # triggered_at=datetime.utcnow().isoformat(),
+        # all_assest_data=[],  #list []
+        # top_opportunities=[],
+        # technical_signals={}, #dictionary {}
+        # sentiment_results={},
+        # risk_check=None,
+        # decision=None,
+        # alert_messages=None, #objects are none
+        # alert_sent=False,
+        # errors=[],
+        # token_usage={},
+    # )
 

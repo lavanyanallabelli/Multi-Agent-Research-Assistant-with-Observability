@@ -1,5 +1,9 @@
-from openai import OpenAI
-from config.settings import OPENAI_API_KEY, TAVILY_API_KEY
+import sys
+import os
+sys.path.insert(0, os.path.dirname(__file__))
 
-print(f"OpenAI key loaded: {bool(OPENAI_API_KEY)}")
-print(f"Tavily key loaded: {bool(TAVILY_API_KEY)}")
+from agents.orchestrator import run_pipeline
+
+if __name__ == "__main__":
+    print("Starting Swing Trading Assistant...")
+    final = run_pipeline()
