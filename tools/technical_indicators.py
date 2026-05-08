@@ -66,40 +66,58 @@ def calculate_indicators(ohlcv: list[dict]) -> dict:
 
 def score_signal(indicators: dict, price: float) -> tuple[str, float]:
     score  = 50.0
-    signal = "HOLD"
+    # signal = "HOLD"
     rsi    = indicators.get("rsi")
     macd   = indicators.get("macd")
     sig    = indicators.get("macd_signal")
     bb_low = indicators.get("bb_lower")
     bb_up  = indicators.get("bb_upper")
 
+     # ── RSI scoring — tighter thresholds ─────────────────
     if rsi is not None:
-        if rsi < 30:
-            score += 20
-        elif rsi < 40:
+        if rsi < 25:       # extremely oversold
+            score += 25
+        elif rsi < 35:     # oversold
+            score += 15
+        elif rsi < 45:     # slightly oversold
+            score += 5
+        elif rsi > 75:     # extremely overbought
+            score -= 25
+        elif rsi > 65:     # overbought
+            score -= 15
+        elif rsi > 55:     # slightly overbought
+            score -= 5
+        # 45-55 = neutral zone, no score change
+
+    # ── MACD scoring ──────────────────────────────────────
+    if macd is not None and sig is not None:
+        diff = macd - sig
+        if diff > 0:
             score += 10
-        elif rsi > 70:
-            score -= 20
-        elif rsi > 60:
+        else:
             score -= 10
 
-    if macd is not None and sig is not None:
-        if macd > sig:
-            score += 15
-        else:
-            score -= 15
-
+    # ── Bollinger Band scoring ────────────────────────────
     if bb_low is not None and bb_up is not None:
-        if price <= bb_low:
-            score += 15
-        elif price >= bb_up:
-            score -= 15
+        bb_range = bb_up - bb_low
+        if bb_range > 0:
+            position = (price - bb_low) / bb_range
+            if position < 0.2:        # near lower band
+                score += 15
+            elif position < 0.35:     # below middle
+                score += 5
+            elif position > 0.8:      # near upper band
+                score -= 15
+            elif position > 0.65:     # above middle
+                score -= 5
+            # middle zone = neutral
 
     score = max(0, min(100, score))
 
-    if score >= 65:
+    # ── Signal requires BOTH score threshold AND RSI confirmation ──
+    if score >= 70 and rsi is not None and rsi < 50:
         signal = "BUY"
-    elif score <= 35:
+    elif score <= 30 and rsi is not None and rsi > 65:
         signal = "SELL"
     else:
         signal = "HOLD"

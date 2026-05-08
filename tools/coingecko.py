@@ -65,3 +65,33 @@ def get_full_asset_data(symbol: str, coingecko_id: str) -> dict:
         "price_change_24h": price_data["price_change_24h"],
         "ohlcv": ohlcv,
     }
+
+def get_market_chart(coingecko_id: str, days: int = 90) -> list[dict]:
+    """
+    Uses /market_chart endpoint which returns daily candles
+    for the past N days on free tier.
+    Returns more data than /ohlc endpoint.
+    """
+    url    = f"{BASE_URL}/coins/{coingecko_id}/market_chart"
+    params = {
+        "vs_currency": "usd",
+        "days":        str(days),
+        "interval":    "daily",
+    }
+    resp = requests.get(url, headers=HEADERS, params=params, timeout=10)
+    resp.raise_for_status()
+    data   = resp.json()
+    prices = data.get("prices", [])
+    candles = []
+    for i in range(1, len(prices)):
+        prev  = prices[i - 1]
+        curr  = prices[i]
+        candles.append({
+            "t": curr[0] // 1000,
+            "o": prev[1],
+            "h": max(prev[1], curr[1]),
+            "l": min(prev[1], curr[1]),
+            "c": curr[1],
+            "v": 0,
+        })
+    return candles

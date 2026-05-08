@@ -71,7 +71,7 @@ PHASE 9 — Observability
 ⬜ Step 37: Token usage + cost per run logged
 
 
-PHASE 10 — Scheduling
+PHASE 10 — Scheduling - too much space moving to simpler version
 
 ⬜ Step 38: Set up n8n locally
 ⬜ Step 39: Cron trigger every 15 minutes
