@@ -2,7 +2,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from tools.technical_indicators import calculate_indicators, score_signal
+from tools.technical_indicators import calculate_indicators, score_signal, detect_market_regime, calculate_volume_signal, check_timeframe_confirmation
 # from memory.state import PipelineState
 
 
@@ -19,7 +19,10 @@ def technical_agent(state: dict) -> dict:
                 raise ValueError(f"No data found for {symbol}")
 
             indicators         = calculate_indicators(data["ohlcv"])
-            signal, strength   = score_signal(indicators, data["price"])
+            regime             = detect_market_regime(data["ohlcv"])
+            volume_signal      = calculate_volume_signal(data["ohlcv"])
+            timeframe          = check_timeframe_confirmation(data["ohlcv"])
+            signal, strength   = score_signal(indicators, data["price"], regime, volume_signal, timeframe)
 
             state["technical_signals"][symbol] = {
                 "symbol":         symbol,

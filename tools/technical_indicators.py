@@ -63,9 +63,172 @@ def calculate_indicators(ohlcv: list[dict]) -> dict:
         "bb_mid":      round(bb_mid, 2)     if bb_mid     is not None else None,
     }
 
+def detect_market_regime(ohlcv: list[dict]) -> str:
+    """
+    Detects current market regime using 200-day moving average.
 
-def score_signal(indicators: dict, price: float) -> tuple[str, float]:
+    Returns:
+        "bull"     — price above 200 MA, favor BUY signals
+        "bear"     — price below 200 MA, favor SELL signals
+        "neutral"  — not enough data
+    """
+    if len(ohlcv) < 50:
+        return "neutral"
+
+    df            = pd.DataFrame(ohlcv)
+    df["close"]   = pd.to_numeric(df["c"], errors="coerce")
+    df            = df.dropna(subset=["close"])
+
+    ma_period     = min(200, len(df))
+    ma            = df["close"].rolling(window=ma_period).mean().iloc[-1]
+    current_price = df["close"].iloc[-1]
+
+    if current_price > ma:
+        return "bull"
+    elif current_price < ma:
+        return "bear"
+    else:
+        return "neutral"
+
+def calculate_volume_signal(ohlcv: list[dict]) -> dict:
+    """
+    Compares current volume to average volume.
+    High volume confirms signals. Low volume weakens them.
+
+    Returns:
+        volume_ratio  — current vol / average vol
+        confirmation  — "high" | "normal" | "low"
+        score_adjust  — points to add/subtract from signal score
+    """
+    if len(ohlcv) < 10:
+        return {
+            "volume_ratio":  1.0,
+            "confirmation":  "normal",
+            "score_adjust":  0,
+        }
+
+    df           = pd.DataFrame(ohlcv)
+    df["volume"] = pd.to_numeric(df["v"], errors="coerce").fillna(0)
+
+    # skip if all volumes are zero (CoinGecko OHLC limitation)
+    if df["volume"].sum() == 0:
+        return {
+            "volume_ratio":  1.0,
+            "confirmation":  "normal",
+            "score_adjust":  0,
+        }
+
+    avg_volume     = df["volume"].iloc[:-1].mean()
+    current_volume = df["volume"].iloc[-1]
+
+    if avg_volume == 0:
+        ratio = 1.0
+    else:
+        ratio = current_volume / avg_volume
+
+    if ratio >= 1.5:
+        confirmation = "high"
+        score_adjust = 10
+    elif ratio <= 0.5:
+        confirmation = "low"
+        score_adjust = -10
+    else:
+        confirmation = "normal"
+        score_adjust = 0
+
+    return {
+        "volume_ratio":  round(ratio, 2),
+        "confirmation":  confirmation,
+        "score_adjust":  score_adjust,
+    }
+
+def check_timeframe_confirmation(ohlcv: list[dict]) -> dict:
+    """
+    Confirms signal across two timeframes.
+    Daily candles = trend direction
+    Last 7 candles = short term momentum
+
+    Returns:
+        trend        — "up" | "down" | "neutral"
+        momentum     — "up" | "down" | "neutral"
+        confirmed    — True if both agree
+        score_adjust — points to add/subtract
+    """
+    if len(ohlcv) < 14:
+        return {
+            "trend":        "neutral",
+            "momentum":     "neutral",
+            "confirmed":    False,
+            "score_adjust": 0,
+        }
+
+    df          = pd.DataFrame(ohlcv)
+    df["close"] = pd.to_numeric(df["c"], errors="coerce")
+    df          = df.dropna(subset=["close"])
+
+    # long term trend — 20 day MA direction
+    ma_20       = df["close"].rolling(window=20).mean()
+    ma_now      = ma_20.iloc[-1]
+    ma_prev     = ma_20.iloc[-5]
+
+    if ma_now > ma_prev * 1.001:
+        trend = "up"
+    elif ma_now < ma_prev * 0.999:
+        trend = "down"
+    else:
+        trend = "neutral"
+
+    # short term momentum — last 7 candles
+    recent      = df["close"].iloc[-7:]
+    first_price = recent.iloc[0]
+    last_price  = recent.iloc[-1]
+    change_pct  = ((last_price - first_price) / first_price) * 100
+
+    if change_pct > 1.0:
+        momentum = "up"
+    elif change_pct < -1.0:
+        momentum = "down"
+    else:
+        momentum = "neutral"
+
+    # confirmation — both timeframes agree
+    confirmed = (
+        (trend == "up"   and momentum == "up") or
+        (trend == "down" and momentum == "down")
+    )
+
+    # score adjustment
+    if confirmed and trend == "up":
+        score_adjust = 10    # both bullish — boost BUY signals
+    elif confirmed and trend == "down":
+        score_adjust = -10   # both bearish — boost SELL signals
+    elif trend == "neutral" or momentum == "neutral":
+        score_adjust = 0     # unclear — no adjustment
+    else:
+        score_adjust = -5    # conflicting timeframes — reduce confidence
+
+    return {
+        "trend":        trend,
+        "momentum":     momentum,
+        "confirmed":    confirmed,
+        "score_adjust": score_adjust,
+    }
+
+def score_signal(indicators: dict, price: float, regime: str = "neutral", volume_signal: dict = None, timeframe: dict = None) -> tuple[str, float]:
     score  = 50.0
+
+    if volume_signal:
+        score += volume_signal.get("score_adjust", 0)
+
+    if timeframe:
+        score += timeframe.get("score_adjust", 0)
+
+    # adjust base score based on market regime
+    if regime == "bull":
+        score += 5    # slight BUY bias in bull market
+    elif regime == "bear":
+        score -= 5    # slight SELL bias in bear market
+
     # signal = "HOLD"
     rsi    = indicators.get("rsi")
     macd   = indicators.get("macd")

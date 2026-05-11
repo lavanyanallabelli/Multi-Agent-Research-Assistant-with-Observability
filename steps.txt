@@ -96,3 +96,74 @@ PHASE 13 — Production
 ⬜ Step 46: Push to GitHub
 ⬜ Step 47: Deploy to Railway or Render
 ⬜ Step 48: Monitor first 24 hours live
+
+
+Here's the full V2 roadmap:
+
+PHASE 1 — Database Rebuild
+
+⬜ Step 1: Rebuild memory/audit_log.py with all 6 tables
+⬜ Step 2: Seed assets universe with default 7 assets
+⬜ Step 3: Update config.py with paper trading settings
+
+
+PHASE 2 — Trading Algorithm
+
+⬜ Step 4: Write trading/portfolio.py
+⬜ Step 5: Write trading/algorithm.py
+⬜ Step 6: Write trading/paper_trader.py
+⬜ Step 7: Write trading/circuit_breaker.py
+
+
+PHASE 3 — Signal Quality Upgrades
+
+⬜ Step 8: Add market regime detection
+⬜ Step 9: Add volume confirmation
+⬜ Step 10: Add correlation filter
+⬜ Step 11: Add multiple timeframe confirmation
+
+
+PHASE 4 — Watchlist System
+
+⬜ Step 12: Write memory/watchlist.py
+⬜ Step 13: Update agents/market_data.py to read from watchlist
+⬜ Step 14: Wire paper trader into pipeline orchestrator
+
+
+PHASE 5 — Web Dashboard
+
+⬜ Step 15: Write dashboard/server.py full API
+⬜ Step 16: Build dashboard page
+⬜ Step 17: Build asset universe page
+⬜ Step 18: Build watchlist page
+⬜ Step 19: Build trades page
+⬜ Step 20: Build positions page
+
+
+PHASE 6 — Notifications Upgrade
+
+⬜ Step 21: Trade execution alerts on Telegram
+⬜ Step 22: Daily summary report
+⬜ Step 23: Circuit breaker alert on Telegram
+
+
+PHASE 7 — Backtesting V2
+
+⬜ Step 24: Walk-forward backtesting
+⬜ Step 25: Drawdown analysis
+⬜ Step 26: Backtest with full trading algorithm
+
+
+PHASE 8 — Live Trading
+
+⬜ Step 27: Alpaca integration for stocks
+⬜ Step 28: Binance integration for crypto
+⬜ Step 29: Live/paper toggle in config
+
+
+PHASE 9 — Production
+
+⬜ Step 30: Migrate to PostgreSQL
+⬜ Step 31: Deploy to Railway
+⬜ Step 32: Health monitoring
+
