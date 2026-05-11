@@ -8,10 +8,11 @@ from tools.newsapi import get_headlines
 # from memory.state import PipelineState
 from config import OPENAI_API_KEY, OPENAI_MODEL, MAX_TOKENS
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+
 
 
 def sentiment_agent(state: dict) -> dict:
+    client = OpenAI(api_key=OPENAI_API_KEY)
     print("\n[SentimentAgent] Analyzing news sentiment...")
 
     top        = state["top_opportunities"]

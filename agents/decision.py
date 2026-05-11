@@ -7,10 +7,11 @@ from openai import OpenAI
 # from memory.state import PipelineState
 from config import OPENAI_API_KEY, OPENAI_MODEL, MAX_TOKENS
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+
 
 
 def decision_agent(state: dict) -> dict:
+    client = OpenAI(api_key=OPENAI_API_KEY)
     print("\n[DecisionAgent] Making trading decision...")
 
     top        = state["top_opportunities"]
