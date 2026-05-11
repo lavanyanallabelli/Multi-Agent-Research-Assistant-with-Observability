@@ -17,6 +17,7 @@ from trading.paper_trader import execute_signal, monitor_positions
 from trading.circuit_breaker import run_circuit_breaker_check
 from observability.tracer import start_trace, end_trace, format_trace_report
 from observability.cost_tracker import format_cost_report
+from agents.execution import execution_agent
 
 
 def should_continue(state: dict) -> str:
@@ -56,8 +57,10 @@ def build_graph():
     graph.add_node("decision",     wrap(decision_agent,     "decision"))
     graph.add_node("risk",         wrap(risk_agent,         "risk"))
     graph.add_node("paper_trader", wrap(paper_trader_node,  "paper_trader"))
+    graph.add_node("execution", wrap(execution_agent, "execution"))
     graph.add_node("writer",       wrap(writer_agent,       "writer"))
     graph.add_node("notification", wrap(notification_agent, "notification"))
+    
 
     graph.set_entry_point("market_data")
     graph.add_edge("market_data",  "technical")
@@ -75,7 +78,8 @@ def build_graph():
     )
 
     graph.add_edge("paper_trader", "writer")
-    graph.add_edge("writer",       "notification")
+    graph.add_edge("execution", "writer")
+    graph.add_edge("writer", "notification")
     graph.add_edge("notification", END)
 
     return graph.compile()

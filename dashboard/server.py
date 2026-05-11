@@ -17,8 +17,10 @@ from trading.portfolio import (
 from memory.watchlist import (
     get_watchlist, get_all_assets,
     add_to_watchlist, remove_from_watchlist,
-    add_new_asset,
+    add_new_asset, update_asset, deactivate_asset,
 )
+
+from trading.alpaca import get_account, get_position
 
 app = FastAPI(title="Swing Trading Assistant API")
 
@@ -78,6 +80,38 @@ def api_trades(limit: int = 20):
     return get_recent_trades(limit)
 
 
+@app.get("/api/alpaca/account")
+def api_alpaca_account():
+    return get_account()
+
+
+@app.get("/api/alpaca/positions")
+def api_alpaca_positions():
+    try:
+        from alpaca.trading.client import TradingClient
+        from config import LIVE_TRADING
+        client    = TradingClient(
+            os.getenv("ALPACA_API_KEY"),
+            os.getenv("ALPACA_SECRET_KEY"),
+            paper=not LIVE_TRADING
+        )
+        positions = client.get_all_positions()
+        return [
+            {
+                "symbol":        p.symbol,
+                "qty":           float(p.qty),
+                "avg_cost":      float(p.avg_entry_price),
+                "market_value":  float(p.market_value),
+                "unrealized_pl": float(p.unrealized_pl),
+                "unrealized_plpc": round(float(p.unrealized_plpc) * 100, 2),
+                "side":          p.side.value,
+            }
+            for p in positions
+        ]
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/runs")
 def api_runs(limit: int = 20):
     return get_recent_runs(limit)
@@ -109,6 +143,17 @@ class NewAssetRequest(BaseModel):
     coingecko_id: str = None
 
 
+class UpdateAssetRequest(BaseModel):
+    symbol: str
+    name: str
+    asset_type: str
+    coingecko_id: str = None
+
+
+class DeleteAssetRequest(BaseModel):
+    symbol: str
+
+
 @app.post("/api/watchlist/add")
 def api_add_watchlist(req: WatchlistRequest):
     result = add_to_watchlist(req.symbol)
@@ -131,6 +176,25 @@ def api_add_asset(req: NewAssetRequest):
         req.symbol, req.name,
         req.asset_type, req.coingecko_id
     )
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["reason"])
+    return result
+
+
+@app.post("/api/assets/update")
+def api_update_asset(req: UpdateAssetRequest):
+    result = update_asset(
+        req.symbol, req.name,
+        req.asset_type, req.coingecko_id,
+    )
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["reason"])
+    return result
+
+
+@app.post("/api/assets/delete")
+def api_delete_asset(req: DeleteAssetRequest):
+    result = deactivate_asset(req.symbol)
     if not result["success"]:
         raise HTTPException(status_code=400, detail=result["reason"])
     return result

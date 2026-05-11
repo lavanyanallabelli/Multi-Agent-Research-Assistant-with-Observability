@@ -33,9 +33,111 @@
             return r.json();
         };
 
+        const DASHBOARD_TZ_KEY = "dashboard_tz";
+
+        const TIMEZONE_OPTIONS = (() => {
+            const browser =
+                typeof Intl !== "undefined" && Intl.DateTimeFormat().resolvedOptions
+                    ? Intl.DateTimeFormat().resolvedOptions().timeZone
+                    : "UTC";
+            const set = new Set(["UTC", browser]);
+            [
+                "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Madrid",
+                "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
+                "America/Toronto", "America/Sao_Paulo", "Africa/Johannesburg",
+                "Asia/Dubai", "Asia/Kolkata", "Asia/Singapore", "Asia/Tokyo", "Asia/Shanghai",
+                "Australia/Sydney", "Pacific/Auckland",
+            ].forEach((z) => set.add(z));
+            if (typeof Intl !== "undefined" && Intl.supportedValuesOf) {
+                try {
+                    for (const z of Intl.supportedValuesOf("timeZone")) set.add(z);
+                } catch (_) { /* ignore */ }
+            }
+            const list = [...set];
+            list.sort((a, b) => {
+                if (a === "UTC") return -1;
+                if (b === "UTC") return 1;
+                if (a === browser) return -1;
+                if (b === browser) return 1;
+                return a.localeCompare(b);
+            });
+            return { browser, list };
+        })();
+
+        /** Backend stores naive datetimes in UTC — interpret ambiguous strings as UTC. */
+        function parseBackendUtc(raw) {
+            if (raw == null || raw === "") return null;
+            const s = String(raw).trim();
+            if (!s || s === "None") return null;
+            if (s.includes("T")) {
+                const hasTz =
+                    /[zZ]$/.test(s) ||
+                    /[+-]\d{2}:\d{2}$/.test(s) ||
+                    /[+-]\d{4}$/.test(s);
+                const normalized = hasTz ? s : `${s.replace(/(\.\d+)?$/, "")}Z`;
+                const d = new Date(normalized);
+                return isNaN(d.getTime()) ? null : d;
+            }
+            const m = s.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/);
+            if (m) {
+                const d = new Date(`${m[1]}T${m[2]}Z`);
+                return isNaN(d.getTime()) ? null : d;
+            }
+            const d = new Date(s);
+            return isNaN(d.getTime()) ? null : d;
+        }
+
+        /** preset: "datetime" (with short zone name) | "date" (calendar day only) */
+        function formatInTimeZone(raw, timeZone, preset = "datetime") {
+            const d = parseBackendUtc(raw);
+            if (!d) return "—";
+            const tz = timeZone && String(timeZone).length ? timeZone : "UTC";
+            const opts =
+                preset === "date"
+                    ? {
+                        timeZone: tz,
+                        year: "numeric",
+                        month: "short",
+                        day: "2-digit",
+                    }
+                    : {
+                        timeZone: tz,
+                        year: "numeric",
+                        month: "short",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                        hour12: false,
+                        timeZoneName: "short",
+                    };
+            try {
+                return new Intl.DateTimeFormat("en-GB", opts).format(d);
+            } catch (_) {
+                const fallback = { ...opts, timeZone: "UTC" };
+                return new Intl.DateTimeFormat("en-GB", fallback).format(d);
+            }
+        }
+
+        function readStoredTimeZone() {
+            try {
+                const s = localStorage.getItem(DASHBOARD_TZ_KEY);
+                if (s && s.length && TIMEZONE_OPTIONS.list.includes(s)) return s;
+                return "UTC";
+            } catch (_) {
+                return "UTC";
+            }
+        }
+
+        function writeStoredTimeZone(tz) {
+            try {
+                localStorage.setItem(DASHBOARD_TZ_KEY, tz);
+            } catch (_) { /* ignore */ }
+        }
+
         // ── Components ─────────────────────────────────────────────
 
-        function Navbar({ page, setPage }) {
+        function Navbar({ page, setPage, timeZone, onTimeZoneChange }) {
             const links = [
                 { id: "dashboard", label: "Dashboard" },
                 { id: "positions", label: "Positions" },
@@ -44,7 +146,7 @@
                 { id: "universe", label: "Assets" },
             ];
             return (
-                <nav class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+                <nav class="bg-white border-b border-gray-200 px-6 py-3 flex flex-wrap items-center justify-between gap-y-3 gap-x-4">
                     <div class="font-semibold text-gray-800 text-sm">
                         📈 Swing Trading Assistant
                     </div>
@@ -63,20 +165,124 @@
                             </button>
                         ))}
                     </div>
-                    <div class="flex items-center gap-2 text-xs text-gray-400">
-                        <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse inline-block"></span>
-                        Live
+                    <div class="flex items-center gap-3 flex-wrap justify-end">
+                        <label class="flex items-center gap-2 text-xs text-gray-500">
+                            <span class="whitespace-nowrap shrink-0">Time zone</span>
+                            <select
+                                value={timeZone}
+                                onChange={(e) => onTimeZoneChange(e.target.value)}
+                                class="border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-800 bg-white max-w-[220px] sm:max-w-xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                title="All timestamps from the server (UTC) are shown in this zone"
+                                aria-label="Display time zone"
+                            >
+                                {TIMEZONE_OPTIONS.list.map((z) => (
+                                    <option key={z} value={z}>
+                                        {z === TIMEZONE_OPTIONS.browser ? `${z} (this device)` : z}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                        <div class="flex items-center gap-2 text-xs text-gray-400">
+                            <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse inline-block"></span>
+                            Live
+                        </div>
                     </div>
                 </nav>
             );
         }
 
-        function StatCard({ label, value, sub, color = "text-gray-900" }) {
+        function StatCard({ label, value, sub, color = "text-gray-900", onClick, hint }) {
+            const interactive = Boolean(onClick);
             return (
-                <div class="bg-white rounded-xl border border-gray-200 p-4">
+                <div
+                    class={`bg-white rounded-xl border border-gray-200 p-4 ${
+                        interactive
+                            ? "cursor-pointer hover:border-blue-300 hover:shadow-sm transition-shadow outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                            : ""
+                    }`}
+                    onClick={onClick}
+                    role={interactive ? "button" : undefined}
+                    tabIndex={interactive ? 0 : undefined}
+                    title={hint || (interactive ? "View details" : undefined)}
+                    onKeyDown={
+                        interactive
+                            ? (e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    onClick();
+                                }
+                            }
+                            : undefined
+                    }
+                >
                     <div class="text-xs text-gray-400 mb-1">{label}</div>
                     <div class={`text-2xl font-semibold ${color}`}>{value}</div>
                     {sub && <div class="text-xs text-gray-400 mt-1">{sub}</div>}
+                </div>
+            );
+        }
+
+        function AlertsModal({ open, onClose, alerts, filter, setFilter, loading, timeZone }) {
+            if (!open) return null;
+            const filtered = alerts.filter((a) => {
+                const act = (a.action || "").toUpperCase();
+                if (!filter || filter === "all") return true;
+                return act === String(filter).toUpperCase();
+            });
+            return (
+                <div class="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="alerts-modal-title">
+                    <div class="absolute inset-0 bg-black/40" onClick={onClose} />
+                    <div class="relative bg-white rounded-xl border border-gray-200 shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col">
+                        <div class="flex items-center justify-between p-4 border-b border-gray-100 shrink-0">
+                            <h2 id="alerts-modal-title" class="text-base font-semibold text-gray-800">Alerts</h2>
+                            <button type="button" onClick={onClose} class="text-gray-400 hover:text-gray-700 text-2xl leading-none px-2 rounded hover:bg-gray-100" aria-label="Close">×</button>
+                        </div>
+                        <div class="px-4 py-2 flex flex-wrap gap-2 border-b border-gray-50 shrink-0">
+                            {[
+                                { id: "all", label: "All" },
+                                { id: "BUY", label: "Buy" },
+                                { id: "SELL", label: "Sell" },
+                            ].map((x) => (
+                                <button
+                                    key={x.id}
+                                    type="button"
+                                    onClick={() => setFilter(x.id)}
+                                    className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors ${
+                                        filter === x.id
+                                            ? "bg-blue-50 border-blue-200 text-blue-700"
+                                            : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                                    }`}
+                                >
+                                    {x.label}
+                                </button>
+                            ))}
+                        </div>
+                        <div class="overflow-y-auto p-4 space-y-3 min-h-0">
+                            {loading ? (
+                                <div class="text-sm text-gray-400 py-8 text-center">Loading alerts…</div>
+                            ) : filtered.length === 0 ? (
+                                <div class="text-sm text-gray-400 py-8 text-center">No alerts in this view</div>
+                            ) : (
+                                filtered.map((a) => (
+                                    <div key={a.id != null ? `alert-${a.id}` : `${a.sent_at}-${a.symbol}`} class="border border-gray-100 rounded-lg p-3 text-sm space-y-2 bg-gray-50/50">
+                                        <div class="flex flex-wrap items-center justify-between gap-2">
+                                            <span class="font-semibold text-gray-900">{a.symbol}</span>
+                                            <div class="flex items-center gap-2">
+                                                <Badge text={a.action} type={(a.action || "").toLowerCase()} />
+                                                <span class="text-xs text-gray-500">{a.confidence}% conf.</span>
+                                            </div>
+                                        </div>
+                                        <div class="text-xs text-gray-400">{formatInTimeZone(a.sent_at, timeZone)}</div>
+                                        {a.message ? (
+                                            <p class="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">{a.message}</p>
+                                        ) : (
+                                            <p class="text-gray-400 text-xs italic">No message text stored for this alert</p>
+                                        )}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
                 </div>
             );
         }
@@ -103,11 +309,29 @@
 
         // ── Dashboard Page ─────────────────────────────────────────
 
-        function DashboardPage() {
+        function DashboardPage({ timeZone }) {
             const [summary, setSummary] = useState(null);
             const [runs, setRuns] = useState([]);
             const [alerts, setAlerts] = useState([]);
             const [loading, setLoading] = useState(true);
+            const [alertsModalOpen, setAlertsModalOpen] = useState(false);
+            const [alertsModalFilter, setAlertsModalFilter] = useState("all");
+            const [modalAlerts, setModalAlerts] = useState([]);
+            const [alertsModalLoading, setAlertsModalLoading] = useState(false);
+
+            const openAlertsModal = async (initialFilter = "all") => {
+                setAlertsModalFilter(initialFilter);
+                setAlertsModalOpen(true);
+                setAlertsModalLoading(true);
+                try {
+                    const data = await fetch_api("/api/alerts?limit=200");
+                    setModalAlerts(Array.isArray(data) ? data : []);
+                } catch (e) {
+                    setModalAlerts([]);
+                } finally {
+                    setAlertsModalLoading(false);
+                }
+            };
 
             const load = async () => {
                 const [s, r, a] = await Promise.all([
@@ -129,6 +353,15 @@
 
             return (
                 <div class="p-6 space-y-6">
+                    <AlertsModal
+                        open={alertsModalOpen}
+                        onClose={() => setAlertsModalOpen(false)}
+                        alerts={modalAlerts}
+                        filter={alertsModalFilter}
+                        setFilter={setAlertsModalFilter}
+                        loading={alertsModalLoading}
+                        timeZone={timeZone}
+                    />
                     <div class="flex items-center justify-between">
                         <h1 class="text-lg font-semibold">Dashboard</h1>
                         <button onClick={load} class="text-xs text-blue-600 border border-blue-200 px-3 py-1 rounded-lg hover:bg-blue-50">Refresh</button>
@@ -155,7 +388,17 @@
                         <div class="text-xs text-gray-400 uppercase tracking-wide mb-3">Pipeline</div>
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
                             <StatCard label="Total Runs" value={summary?.total_runs || 0} />
-                            <StatCard label="Alerts Sent" value={summary?.total_alerts || 0} />
+                            <StatCard
+                                label="Alerts Sent"
+                                value={summary?.total_alerts || 0}
+                                sub={
+                                    (summary?.total_alerts || 0) > 0
+                                        ? `${summary?.buy_alerts || 0} buy · ${summary?.sell_alerts || 0} sell`
+                                        : undefined
+                                }
+                                onClick={() => openAlertsModal("all")}
+                                hint="View all sent alerts"
+                            />
                             <StatCard label="Avg Confidence" value={`${summary?.avg_confidence || 0}%`} />
                             <StatCard label="Total Cost" value={`$${summary?.total_cost || 0}`} sub={`$${summary?.avg_cost_per_run || 0}/run`} />
                         </div>
@@ -170,7 +413,7 @@
                                 : <div class="space-y-2">
                                     {runs.map((r, i) => (
                                         <div key={i} class="flex items-center justify-between text-sm py-1 border-b border-gray-50 last:border-0">
-                                            <div class="text-gray-400 text-xs">{r.triggered_at?.slice(0, 16)}</div>
+                                            <div class="text-gray-400 text-xs">{formatInTimeZone(r.triggered_at, timeZone)}</div>
                                             <div class="flex items-center gap-2">
                                                 {r.action
                                                     ? <Badge text={`${r.action} ${r.symbol}`} type={r.action?.toLowerCase()} />
@@ -192,11 +435,16 @@
                                 ? <div class="text-sm text-gray-400">No alerts sent yet</div>
                                 : <div class="space-y-2">
                                     {alerts.map((a, i) => (
-                                        <div key={i} class="flex items-center justify-between text-sm py-1 border-b border-gray-50 last:border-0">
-                                            <div class="text-gray-400 text-xs">{a.sent_at?.slice(0, 16)}</div>
-                                            <div class="font-medium">{a.symbol}</div>
-                                            <Badge text={a.action} type={a.action?.toLowerCase()} />
-                                            <div class="text-gray-500 text-xs">{a.confidence}%</div>
+                                        <div key={a.id != null ? `a-${a.id}` : i} class="py-2 border-b border-gray-50 last:border-0 space-y-1">
+                                            <div class="flex items-center justify-between text-sm gap-2">
+                                                <div class="text-gray-400 text-xs shrink-0">{formatInTimeZone(a.sent_at, timeZone)}</div>
+                                                <div class="font-medium">{a.symbol}</div>
+                                                <Badge text={a.action} type={a.action?.toLowerCase()} />
+                                                <div class="text-gray-500 text-xs shrink-0">{a.confidence}%</div>
+                                            </div>
+                                            {a.message ? (
+                                                <p class="text-xs text-gray-600 line-clamp-2 pl-0">{a.message}</p>
+                                            ) : null}
                                         </div>
                                     ))}
                                 </div>
@@ -209,7 +457,7 @@
 
         // ── Positions Page ─────────────────────────────────────────
 
-        function PositionsPage() {
+        function PositionsPage({ timeZone }) {
             const [positions, setPositions] = useState([]);
             const [loading, setLoading] = useState(true);
 
@@ -243,7 +491,7 @@
                                             <td class="px-4 py-3">${p.position_value?.toLocaleString()}</td>
                                             <td class="px-4 py-3 text-red-500">${p.stop_loss?.toLocaleString()}</td>
                                             <td class="px-4 py-3 text-green-600">${p.take_profit?.toLocaleString()}</td>
-                                            <td class="px-4 py-3 text-gray-400 text-xs">{p.opened_at?.slice(0, 16)}</td>
+                                            <td class="px-4 py-3 text-gray-400 text-xs">{formatInTimeZone(p.opened_at, timeZone)}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -256,7 +504,7 @@
 
         // ── Trades Page ────────────────────────────────────────────
 
-        function TradesPage() {
+        function TradesPage({ timeZone }) {
             const [trades, setTrades] = useState([]);
             const [loading, setLoading] = useState(true);
 
@@ -300,7 +548,7 @@
                                                     type={t.exit_reason === "TAKE_PROFIT" ? "buy" : t.exit_reason === "STOP_LOSS" ? "sell" : "hold"}
                                                 />
                                             </td>
-                                            <td class="px-4 py-3 text-gray-400 text-xs">{t.closed_at?.slice(0, 16)}</td>
+                                            <td class="px-4 py-3 text-gray-400 text-xs">{formatInTimeZone(t.closed_at, timeZone)}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -313,7 +561,7 @@
 
         // ── Watchlist Page ─────────────────────────────────────────
 
-        function WatchlistPage() {
+        function WatchlistPage({ timeZone }) {
             const [watchlist, setWatchlist] = useState([]);
             const [loading, setLoading] = useState(true);
             const [removing, setRemoving] = useState(null);
@@ -355,9 +603,9 @@
                             <tbody class="divide-y divide-gray-50">
                                 {watchlist.map((w, i) => (
                                     <tr key={i} class="hover:bg-gray-50">
-                                        <td class="px-4 py-3 font-medium">{w.symbol}</td>
+                                        <td class="px-4 py-3 font-medium" title={w.name ? String(w.name) : w.symbol}>{w.symbol}</td>
                                         <td class="px-4 py-3"><Badge text={w.asset_type} type={w.asset_type} /></td>
-                                        <td class="px-4 py-3 text-gray-400 text-xs">{w.added_at?.slice(0, 10)}</td>
+                                        <td class="px-4 py-3 text-gray-400 text-xs">{formatInTimeZone(w.added_at, timeZone, "date")}</td>
                                         <td class="px-4 py-3">
                                             <button
                                                 onClick={() => remove(w.symbol)}
@@ -384,6 +632,9 @@
             const [adding, setAdding] = useState(null);
             const [newAsset, setNewAsset] = useState({ symbol: "", name: "", asset_type: "crypto", coingecko_id: "" });
             const [showForm, setShowForm] = useState(false);
+            const [editOpen, setEditOpen] = useState(false);
+            const [editForm, setEditForm] = useState({ symbol: "", name: "", asset_type: "crypto", coingecko_id: "" });
+            const [deleting, setDeleting] = useState(null);
 
             const load = () => {
                 fetch_api("/api/assets").then(d => { setAssets(d); setLoading(false); });
@@ -404,13 +655,69 @@
             };
 
             const addNewAsset = async () => {
-                await fetch(`${API}/api/assets/add`, {
+                const r = await fetch(`${API}/api/assets/add`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(newAsset),
                 });
+                let data = {};
+                try { data = await r.json(); } catch (_) {}
+                if (!r.ok) {
+                    alert(typeof data.detail === "string" ? data.detail : "Could not add asset");
+                    return;
+                }
                 setNewAsset({ symbol: "", name: "", asset_type: "crypto", coingecko_id: "" });
                 setShowForm(false);
+                load();
+            };
+
+            const openEdit = (a) => {
+                setEditForm({
+                    symbol: a.symbol,
+                    name: a.name || "",
+                    asset_type: a.asset_type || "crypto",
+                    coingecko_id: a.coingecko_id || "",
+                });
+                setEditOpen(true);
+            };
+
+            const saveEdit = async () => {
+                const r = await fetch(`${API}/api/assets/update`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        symbol: editForm.symbol,
+                        name: editForm.name,
+                        asset_type: editForm.asset_type,
+                        coingecko_id: editForm.coingecko_id || null,
+                    }),
+                });
+                let data = {};
+                try { data = await r.json(); } catch (_) {}
+                if (!r.ok) {
+                    alert(typeof data.detail === "string" ? data.detail : "Update failed");
+                    return;
+                }
+                setEditOpen(false);
+                load();
+            };
+
+            const removeAsset = async (symbol) => {
+                if (!window.confirm(`Remove ${symbol} from the universe? It will disappear from this list and be taken off the watchlist. Historical records stay in the database.`))
+                    return;
+                setDeleting(symbol);
+                const r = await fetch(`${API}/api/assets/delete`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ symbol }),
+                });
+                let data = {};
+                try { data = await r.json(); } catch (_) {}
+                setDeleting(null);
+                if (!r.ok) {
+                    alert(typeof data.detail === "string" ? data.detail : "Delete failed");
+                    return;
+                }
                 load();
             };
 
@@ -418,6 +725,44 @@
 
             return (
                 <div class="p-6">
+                    {editOpen && (
+                        <div class="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="edit-asset-title">
+                            <div class="absolute inset-0 bg-black/40" onClick={() => setEditOpen(false)} />
+                            <div class="relative bg-white rounded-xl border border-gray-200 shadow-xl max-w-lg w-full p-4">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h2 id="edit-asset-title" class="text-base font-semibold text-gray-800">Edit asset</h2>
+                                    <button type="button" onClick={() => setEditOpen(false)} class="text-gray-400 hover:text-gray-700 text-xl px-2" aria-label="Close">×</button>
+                                </div>
+                                <p class="text-xs text-gray-500 mb-3">Ticker cannot be changed. Use delete and add if you need a different symbol. Name is optional metadata (hover on Assets table shows it).</p>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <label class="text-xs text-gray-500 block mb-1">Symbol</label>
+                                        <input class="border border-gray-200 rounded-lg px-3 py-2 text-sm w-full bg-gray-50 text-gray-600" readOnly value={editForm.symbol} />
+                                    </div>
+                                    <div>
+                                        <label class="text-xs text-gray-500 block mb-1">Display name (optional)</label>
+                                        <input class="border border-gray-200 rounded-lg px-3 py-2 text-sm w-full" placeholder="e.g. Apple Inc." value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+                                    </div>
+                                    <div>
+                                        <label class="text-xs text-gray-500 block mb-1">Type</label>
+                                        <select class="border border-gray-200 rounded-lg px-3 py-2 text-sm w-full" value={editForm.asset_type} onChange={e => setEditForm({ ...editForm, asset_type: e.target.value })}>
+                                            <option value="crypto">Crypto</option>
+                                            <option value="stock">Stock</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="text-xs text-gray-500 block mb-1">CoinGecko ID</label>
+                                        <input class="border border-gray-200 rounded-lg px-3 py-2 text-sm w-full" placeholder="e.g. solana" value={editForm.coingecko_id} onChange={e => setEditForm({ ...editForm, coingecko_id: e.target.value })} />
+                                    </div>
+                                </div>
+                                <div class="flex gap-2 mt-4 justify-end">
+                                    <button type="button" onClick={() => setEditOpen(false)} class="text-sm text-gray-600 border border-gray-200 px-4 py-1.5 rounded-lg hover:bg-gray-50">Cancel</button>
+                                    <button type="button" onClick={saveEdit} class="text-sm bg-blue-600 text-white px-4 py-1.5 rounded-lg hover:bg-blue-700">Save</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     <div class="flex items-center justify-between mb-6">
                         <h1 class="text-lg font-semibold">Asset Universe</h1>
                         <button
@@ -440,7 +785,7 @@
                                 />
                                 <input
                                     class="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                                    placeholder="Name (e.g. Ripple)"
+                                    placeholder="Display name (optional)"
                                     value={newAsset.name}
                                     onChange={e => setNewAsset({ ...newAsset, name: e.target.value })}
                                 />
@@ -480,16 +825,17 @@
                         <table class="w-full text-sm">
                             <thead class="bg-gray-50 text-xs text-gray-400 uppercase">
                                 <tr>
-                                    {["Symbol", "Name", "Type", "Watchlist"].map(h => (
+                                    {["Symbol", "Type", "Watchlist", "Actions"].map(h => (
                                         <th key={h} class="px-4 py-3 text-left font-medium">{h}</th>
                                     ))}
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-50">
                                 {assets.map((a, i) => (
-                                    <tr key={i} class="hover:bg-gray-50">
-                                        <td class="px-4 py-3 font-medium">{a.symbol}</td>
-                                        <td class="px-4 py-3 text-gray-500">{a.name}</td>
+                                    <tr key={a.symbol || i} class="hover:bg-gray-50">
+                                        <td class="px-4 py-3 font-medium">
+                                            <span title={a.name ? String(a.name) : a.symbol}>{a.symbol}</span>
+                                        </td>
                                         <td class="px-4 py-3"><Badge text={a.asset_type} type={a.asset_type} /></td>
                                         <td class="px-4 py-3">
                                             <button
@@ -504,6 +850,25 @@
                                                 {adding === a.symbol ? "..." : a.in_watchlist ? "✓ Watching" : "+ Watch"}
                                             </button>
                                         </td>
+                                        <td class="px-4 py-3">
+                                            <div class="flex flex-wrap gap-1.5">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => openEdit(a)}
+                                                    class="text-xs text-blue-600 border border-blue-200 px-2 py-1 rounded hover:bg-blue-50"
+                                                >
+                                                    Edit
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeAsset(a.symbol)}
+                                                    disabled={deleting === a.symbol}
+                                                    class="text-xs text-red-600 border border-red-200 px-2 py-1 rounded hover:bg-red-50 disabled:opacity-50"
+                                                >
+                                                    {deleting === a.symbol ? "…" : "Delete"}
+                                                </button>
+                                            </div>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -517,18 +882,24 @@
 
         function App() {
             const [page, setPage] = useState("dashboard");
+            const [timeZone, setTimeZone] = useState(readStoredTimeZone);
+
+            const persistTimeZone = (tz) => {
+                setTimeZone(tz);
+                writeStoredTimeZone(tz);
+            };
 
             const pages = {
-                dashboard: <DashboardPage />,
-                positions: <PositionsPage />,
-                trades: <TradesPage />,
-                watchlist: <WatchlistPage />,
+                dashboard: <DashboardPage timeZone={timeZone} />,
+                positions: <PositionsPage timeZone={timeZone} />,
+                trades: <TradesPage timeZone={timeZone} />,
+                watchlist: <WatchlistPage timeZone={timeZone} />,
                 universe: <UniversePage />,
             };
 
             return (
                 <div class="min-h-screen bg-gray-50">
-                    <Navbar page={page} setPage={setPage} />
+                    <Navbar page={page} setPage={setPage} timeZone={timeZone} onTimeZoneChange={persistTimeZone} />
                     <main class="max-w-6xl mx-auto">
                         {pages[page]}
                     </main>

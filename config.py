@@ -53,3 +53,4 @@ LIVE_TRADING                = False   # False = paper, True = live
 ALPACA_API_KEY    = os.getenv("ALPACA_API_KEY", "")
 ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY", "")
 ALPACA_BASE_URL   = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+ALPACA_TRADE_SIZE = float(os.getenv("ALPACA_TRADE_SIZE", 1000))

@@ -7,6 +7,10 @@ from sqlalchemy.orm import Session
 from memory.audit_log import engine, Watchlist, AssetUniverse
 
 
+def _display_name(name: str, symbol: str) -> str:
+    n = (name or "").strip()
+    return n if n else symbol.upper()
+
 def get_watchlist() -> list[dict]:
     """Returns all active watchlist assets."""
     with Session(engine) as session:
@@ -54,7 +58,10 @@ def add_to_watchlist(symbol: str) -> dict:
     with Session(engine) as session:
         # check asset exists in universe
         asset = session.query(AssetUniverse)\
-            .filter(AssetUniverse.symbol == symbol.upper()).first()
+            .filter(
+                AssetUniverse.symbol == symbol.upper(),
+                AssetUniverse.is_active == True,
+            ).first()
         if not asset:
             return {"success": False, "reason": f"{symbol} not in asset universe"}
 
@@ -105,13 +112,65 @@ def add_new_asset(
         existing = session.query(AssetUniverse)\
             .filter(AssetUniverse.symbol == symbol.upper()).first()
         if existing:
-            return {"success": False, "reason": f"{symbol} already exists"}
+            if existing.is_active:
+                return {"success": False, "reason": f"{symbol} already exists"}
+            existing.name = _display_name(name, symbol)
+            existing.asset_type = asset_type
+            existing.coingecko_id = coingecko_id
+            existing.is_active = True
+            existing.added_at = datetime.utcnow()
+            session.commit()
+            return {"success": True, "reason": f"{symbol} restored to universe"}
 
         session.add(AssetUniverse(
             symbol=symbol.upper(),
-            name=name,
+            name=_display_name(name, symbol),
             asset_type=asset_type,
             coingecko_id=coingecko_id,
         ))
         session.commit()
         return {"success": True, "reason": f"{symbol} added to universe"}
+
+
+def update_asset(
+    symbol: str,
+    name: str,
+    asset_type: str,
+    coingecko_id: str = None,
+) -> dict:
+    """Update name, type, and CoinGecko id. Symbol (primary key) cannot change."""
+    with Session(engine) as session:
+        asset = session.query(AssetUniverse).filter(
+            AssetUniverse.symbol == symbol.upper(),
+            AssetUniverse.is_active == True,
+        ).first()
+        if not asset:
+            return {"success": False, "reason": "Asset not found or inactive"}
+        asset.name = _display_name(name, symbol)
+        asset.asset_type = asset_type
+        asset.coingecko_id = (coingecko_id or "").strip() or None
+        session.commit()
+        return {"success": True, "reason": f"{symbol.upper()} updated"}
+
+
+def deactivate_asset(symbol: str) -> dict:
+    """
+    Soft-remove from universe: hide from listings and take off watchlist.
+    Keeps DB row for foreign keys (positions, alerts history).
+    """
+    with Session(engine) as session:
+        asset = session.query(AssetUniverse).filter(
+            AssetUniverse.symbol == symbol.upper(),
+        ).first()
+        if not asset:
+            return {"success": False, "reason": "Asset not found"}
+        if not asset.is_active:
+            return {"success": False, "reason": "Asset already removed"}
+        asset.is_active = False
+        wl = session.query(Watchlist).filter(
+            Watchlist.symbol == symbol.upper(),
+        ).first()
+        if wl:
+            wl.is_active = False
+        session.commit()
+        return {"success": True, "reason": f"{symbol.upper()} removed from universe"}

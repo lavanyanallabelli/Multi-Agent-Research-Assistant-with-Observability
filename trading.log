@@ -20,3 +20,50 @@
 2026-05-10 00:35:21,281 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
 2026-05-10 00:35:21,493 [INFO] Pipeline complete — alert_sent=False errors=2
 2026-05-10 00:35:21,495 [INFO] Done.
+2026-05-11 17:29:46,320 [INFO] Scheduler started — running every 15 minutes
+2026-05-11 17:29:46,413 [INFO] Press Ctrl+C to stop
+
+2026-05-11 17:29:46,413 [INFO] Pipeline triggered
+2026-05-11 17:30:06,540 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 17:30:08,946 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 17:30:14,896 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 17:30:17,473 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 17:30:17,596 [INFO] Pipeline complete — alert_sent=False errors=3
+2026-05-11 17:45:17,617 [INFO] Pipeline triggered
+2026-05-11 17:45:37,520 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 17:45:40,170 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 17:45:45,928 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 17:45:49,310 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 17:45:49,501 [INFO] Pipeline complete — alert_sent=False errors=3
+2026-05-11 18:07:08,597 [INFO] Running once...
+2026-05-11 18:07:08,597 [INFO] Pipeline triggered
+2026-05-11 18:07:28,210 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 18:07:31,424 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 18:07:35,473 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 18:07:37,964 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 18:07:38,196 [INFO] Pipeline complete — alert_sent=False errors=3
+2026-05-11 18:07:38,196 [INFO] Done.
+2026-05-11 18:10:36,890 [INFO] Running once...
+2026-05-11 18:10:36,890 [INFO] Pipeline triggered
+2026-05-11 18:11:03,966 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 18:11:08,224 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 18:11:12,103 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 18:11:19,912 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 18:11:23,938 [INFO] Pipeline complete — alert_sent=True errors=3
+2026-05-11 18:11:23,938 [INFO] Done.
+2026-05-11 18:18:23,731 [INFO] Running once...
+2026-05-11 18:18:23,732 [INFO] Pipeline triggered
+2026-05-11 18:18:40,469 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 18:18:43,232 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 18:18:46,668 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 18:18:49,252 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 18:18:49,456 [INFO] Pipeline complete — alert_sent=False errors=1
+2026-05-11 18:18:49,458 [INFO] Done.
+2026-05-11 19:17:09,092 [INFO] Running once...
+2026-05-11 19:17:09,092 [INFO] Pipeline triggered
+2026-05-11 19:17:24,000 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 19:17:27,087 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 19:17:30,465 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 19:17:33,213 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-05-11 19:17:33,402 [INFO] Pipeline complete — alert_sent=False errors=0
+2026-05-11 19:17:33,404 [INFO] Done.

@@ -277,10 +277,12 @@ def get_recent_alerts(limit: int = 10) -> list[dict]:
             .limit(limit).all()
         return [
             {
+                "id":         a.id,
                 "sent_at":    str(a.sent_at),
                 "symbol":     a.symbol,
                 "action":     a.action,
                 "confidence": a.confidence,
+                "message":    a.message or "",
             }
             for a in alerts
         ]

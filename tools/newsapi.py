@@ -1,10 +1,21 @@
 import requests
 import sys
 import os
+from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from config import NEWS_API_KEY
 
 BASE_URL = "https://newsapi.org/v2/everything"
+
+# cache: { symbol: { "headlines": [...], "fetched_at": datetime } }
+_cache = {}
+CACHE_MINUTES = 30
+
+def _is_cache_valid(symbol: str) -> bool:
+    if symbol not in _cache:
+        return False
+    age = datetime.utcnow() - _cache[symbol]["fetched_at"]
+    return age < timedelta(minutes=CACHE_MINUTES)
 
 def build_query(symbol: str, asset_type: str = "unknown") -> str:
 
@@ -17,6 +28,10 @@ def build_query(symbol: str, asset_type: str = "unknown") -> str:
         return symbol
 
 def get_headlines(symbol: str, asset_type: str = "unknown", max_articles: int = 10) -> list[str]:
+    if _is_cache_valid(symbol):
+        print(f"  [NewsAPI] {symbol}: using cached headlines")
+        return _cache[symbol]["headlines"]
+
     query = build_query(symbol, asset_type)
     params = {
         "q": query,
@@ -34,4 +49,11 @@ def get_headlines(symbol: str, asset_type: str = "unknown", max_articles: int = 
         desc = article.get("description", "")
         if title:
             headlines.append(f"{title}. {desc}" if desc else title)
+
+     _cache[symbol] = {
+        "headlines":  headlines,
+        "fetched_at": datetime.utcnow(),
+    }
+    print(f"  [NewsAPI] {symbol}: fetched {len(headlines)} headlines, cached for {CACHE_MINUTES}min")
     return headlines
+    
