@@ -4,6 +4,8 @@ import time
 import schedule
 import logging
 from datetime import datetime
+from scripts.daily_report import generate_daily_report
+from tools.telegram import send_message as telegram_send
 sys.path.insert(0, os.path.dirname(__file__))
 
 from agents.orchestrator import run_pipeline
@@ -48,6 +50,11 @@ def run_scheduler(interval_minutes: int = 15):
 
     # schedule recurring runs
     schedule.every(interval_minutes).minutes.do(job)
+
+    # daily report every morning at 8am UTC
+    schedule.every().day.at("08:00").do(
+        lambda: telegram_send(generate_daily_report())
+    )
 
     while True:
         schedule.run_pending()

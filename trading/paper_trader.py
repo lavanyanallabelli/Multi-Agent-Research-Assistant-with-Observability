@@ -70,17 +70,24 @@ def execute_signal(state: dict) -> dict:
     )
 
     # send telegram alert
-    emoji     = "🟢" if action == "BUY" else "🔴"
+    # send telegram alert
+    emoji          = "🟢" if action == "BUY" else "🔴"
     direction_label = "LONG" if action == "BUY" else "SHORT"
+    portfolio      = get_portfolio()
+
     msg = f"""{emoji} <b>PAPER TRADE OPENED — {symbol}</b>
 
-📊 Direction: {direction_label}
-💰 Entry: ${price:,.2f}
-📦 Quantity: {sizing['quantity']:.6f}
-💵 Position Value: ${sizing['position_size']:,.2f}
-🛑 Stop Loss: ${levels['stop_loss']:,.2f}
-🎯 Take Profit: ${levels['take_profit']:,.2f}
-🎯 Confidence: {confidence}%
+📊 Direction:       {direction_label}
+💰 Entry Price:     ${price:,.2f}
+📦 Quantity:        {sizing['quantity']:.6f}
+💵 Position Value:  ${sizing['position_size']:,.2f}
+🛑 Stop Loss:       ${levels['stop_loss']:,.2f} (-{3}%)
+🎯 Take Profit:     ${levels['take_profit']:,.2f} (+{6}%)
+🎯 Confidence:      {confidence}%
+
+💼 Portfolio after trade:
+  Cash remaining: ${portfolio['cash_balance']:,.2f}
+  Open positions: {portfolio['open_positions']}
 
 ⚠️ <i>Paper trading — not real money</i>"""
 
