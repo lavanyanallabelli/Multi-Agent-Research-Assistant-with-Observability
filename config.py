@@ -49,3 +49,7 @@ PAPER_TRADING_STOP_LOSS_PCT = 3.0     # stop loss % below entry
 PAPER_TRADING_TP_PCT        = 6.0     # take profit % above entry
 CIRCUIT_BREAKER_PCT         = 15.0    # pause trading if portfolio drops this %
 LIVE_TRADING                = False   # False = paper, True = live
+
+ALPACA_API_KEY    = os.getenv("ALPACA_API_KEY", "")
+ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY", "")
+ALPACA_BASE_URL   = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")

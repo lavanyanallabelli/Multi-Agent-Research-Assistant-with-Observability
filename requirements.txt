@@ -1,5 +1,7 @@
 #LLM
 openai>=1.0.0
+langchain>=0.1.0
+langgraph>=0.1.0
 
 #stock market data
 yfinance>=0.2.36
@@ -29,3 +31,12 @@ structlog>=23.0.0
 #API Layer 
 fastapi>=0.104.0
 uvicorn>=0.24.0 
+
+#Database
+sqlalchemy>=2.0.0
+
+#HTTP client (NewsAPI, CoinGecko, Telegram)
+requests>=2.31.0
+
+#Scheduling
+schedule>=1.2.0
