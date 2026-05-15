@@ -31,6 +31,7 @@ structlog>=23.0.0
 #API Layer 
 fastapi>=0.104.0
 uvicorn>=0.24.0 
+psycopg2-binary
 
 #Database
 sqlalchemy>=2.0.0
