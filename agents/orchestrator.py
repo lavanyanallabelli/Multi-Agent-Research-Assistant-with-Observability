@@ -77,7 +77,7 @@ def build_graph():
         }
     )
 
-    graph.add_edge("paper_trader", "writer")
+    graph.add_edge("paper_trader", "execution")
     graph.add_edge("execution", "writer")
     graph.add_edge("writer", "notification")
     graph.add_edge("notification", END)

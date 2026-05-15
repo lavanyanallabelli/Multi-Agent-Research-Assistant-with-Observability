@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from memory.audit_log import (
     engine, Portfolio, Position, Trade
 )
-from config import PAPER_TRADING_BALANCE
+from memory.audit_log import get_system_settings
 
 
 def get_portfolio() -> dict:
@@ -125,6 +125,11 @@ def close_position(
 
         if not position:
             raise ValueError(f"Position {position_id} not found")
+        if position.status != "OPEN":
+            raise ValueError(
+                f"Position {position_id} is not open "
+                f"(current status: {position.status})"
+            )
 
         entry_price    = position.entry_price
         quantity       = position.quantity
@@ -138,7 +143,7 @@ def close_position(
         pnl_pct        = (pnl / position_value) * 100
         exit_value     = position_value + pnl
 
-        position.status     = exit_reason
+        position.status     = "CLOSED"
         position.closed_at  = datetime.utcnow()
 
         trade = Trade(
@@ -168,7 +173,7 @@ def close_position(
         else:
             portfolio.losing_trades  += 1
 
-        starting_balance     = PAPER_TRADING_BALANCE
+        starting_balance     = get_system_settings().get('portfolio_balance', 2000.0)
         portfolio.total_pnl_pct = (
             (portfolio.total_pnl / starting_balance) * 100
         )

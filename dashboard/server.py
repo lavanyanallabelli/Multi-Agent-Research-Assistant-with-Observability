@@ -10,9 +10,11 @@ from pydantic import BaseModel
 from memory.audit_log import (
     get_recent_runs, get_recent_alerts,
     get_portfolio, initialize_db,
+    get_recent_broker_snapshots, log_broker_snapshot,
+    Session, engine, AssetUniverse,
 )
 from trading.portfolio import (
-    get_open_positions, get_recent_trades
+    close_position, get_open_positions, get_recent_trades
 )
 from memory.watchlist import (
     get_watchlist, get_all_assets,
@@ -20,7 +22,22 @@ from memory.watchlist import (
     add_new_asset, update_asset, deactivate_asset,
 )
 
-from trading.alpaca import get_account, get_position
+from trading.alpaca import get_account, get_all_positions
+
+from backtesting.backtest import run_backtest as _run_backtest
+from tools.alpha_vantage import get_ohlcv as get_stock_ohlcv
+from backtesting.backtest import simulate_signals, evaluate_signals, calculate_drawdown
+import threading
+
+from fastapi.responses import StreamingResponse
+import time
+
+from memory.audit_log import (
+    get_system_settings, update_system_settings,
+    get_trading_state, update_trading_state
+)
+from agents.orchestrator import run_pipeline
+
 
 app = FastAPI(title="Swing Trading Assistant API")
 
@@ -67,49 +84,65 @@ def get_summary():
 
 @app.get("/api/portfolio")
 def api_portfolio():
-    return get_portfolio()
+    return {"source": "simulator", **get_portfolio()}
 
 
 @app.get("/api/positions")
 def api_positions():
-    return get_open_positions()
+    return [
+        {"source": "simulator", **position}
+        for position in get_open_positions()
+    ]
 
 
 @app.get("/api/trades")
 def api_trades(limit: int = 20):
-    return get_recent_trades(limit)
+    return [
+        {"source": "simulator", **trade}
+        for trade in get_recent_trades(limit)
+    ]
 
 
 @app.get("/api/alpaca/account")
 def api_alpaca_account():
-    return get_account()
+    account = get_account()
+    return {"source": "broker", "broker": "alpaca", **account}
 
 
 @app.get("/api/alpaca/positions")
 def api_alpaca_positions():
-    try:
-        from alpaca.trading.client import TradingClient
-        from config import LIVE_TRADING
-        client    = TradingClient(
-            os.getenv("ALPACA_API_KEY"),
-            os.getenv("ALPACA_SECRET_KEY"),
-            paper=not LIVE_TRADING
-        )
-        positions = client.get_all_positions()
-        return [
-            {
-                "symbol":        p.symbol,
-                "qty":           float(p.qty),
-                "avg_cost":      float(p.avg_entry_price),
-                "market_value":  float(p.market_value),
-                "unrealized_pl": float(p.unrealized_pl),
-                "unrealized_plpc": round(float(p.unrealized_plpc) * 100, 2),
-                "side":          p.side.value,
-            }
-            for p in positions
-        ]
-    except Exception as e:
-        return {"error": str(e)}
+    positions = get_all_positions()
+    return {"source": "broker", "broker": "alpaca", **positions}
+
+
+class CloseAlpacaPositionRequest(BaseModel):
+    symbol: str
+
+@app.post("/api/alpaca/positions/close")
+def api_alpaca_close_position(req: CloseAlpacaPositionRequest):
+    from trading.alpaca import close_position as alpaca_close_position
+    result = alpaca_close_position(req.symbol)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    return result
+
+
+@app.get("/api/alpaca/snapshots")
+def api_alpaca_snapshots(limit: int = 10):
+    return get_recent_broker_snapshots("alpaca", limit)
+
+
+@app.post("/api/alpaca/snapshot")
+def api_alpaca_snapshot():
+    account = get_account()
+    positions = get_all_positions()
+    log_broker_snapshot("alpaca", account, positions)
+    return {
+        "source": "broker",
+        "broker": "alpaca",
+        "account": account,
+        "positions": positions,
+    }
 
 
 @app.get("/api/runs")
@@ -152,6 +185,27 @@ class UpdateAssetRequest(BaseModel):
 
 class DeleteAssetRequest(BaseModel):
     symbol: str
+
+
+class CloseSimulatorPositionRequest(BaseModel):
+    position_id: int
+    exit_price: float
+    exit_reason: str = "MANUAL"
+
+
+@app.post("/api/simulator/positions/close")
+def api_close_simulator_position(req: CloseSimulatorPositionRequest):
+    if req.exit_price <= 0:
+        raise HTTPException(status_code=400, detail="Exit price must be greater than zero")
+    try:
+        trade = close_position(
+            position_id=req.position_id,
+            exit_price=req.exit_price,
+            exit_reason=req.exit_reason or "MANUAL",
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"source": "simulator", "trade": trade, "portfolio": get_portfolio()}
 
 
 @app.post("/api/watchlist/add")
@@ -199,6 +253,164 @@ def api_delete_asset(req: DeleteAssetRequest):
         raise HTTPException(status_code=400, detail=result["reason"])
     return result
 
+
+# store backtest results in memory
+_backtest_results = {}
+_backtest_running = {}
+
+
+@app.get("/api/backtest/{symbol}")
+def api_backtest_get(symbol: str, days: int = 90, hold_days: int = 3):
+    """Returns running state, cached results, or not_run."""
+    sym = symbol.upper()
+    key = f"{sym}_{days}_{hold_days}"
+    if _backtest_running.get(key):
+        return {"status": "running", "symbol": sym}
+    if key in _backtest_results:
+        return _backtest_results[key]
+    return {"status": "not_run", "symbol": sym}
+
+
+@app.post("/api/backtest/{symbol}")
+def api_run_backtest(symbol: str, days: int = 90, hold_days: int = 3):
+    """Triggers a backtest run for a symbol (async thread)."""
+    sym = symbol.upper()
+    key = f"{sym}_{days}_{hold_days}"
+
+    if _backtest_running.get(key):
+        return {"status": "running", "symbol": sym}
+
+    def run():
+        try:
+            with Session(engine) as session:
+                asset = session.query(AssetUniverse).filter(
+                    AssetUniverse.symbol == sym,
+                    AssetUniverse.is_active == True,
+                ).first()
+
+            if not asset:
+                _backtest_results[key] = {
+                    "status": "error",
+                    "reason": f"{sym} not in universe or inactive",
+                }
+                return
+
+            if asset.asset_type == "crypto":
+                cg = (asset.coingecko_id or "").strip()
+                if not cg:
+                    _backtest_results[key] = {
+                        "status": "error",
+                        "reason": f"{sym} has no CoinGecko ID (required for crypto backtest)",
+                    }
+                    return
+                result = _run_backtest(sym, cg, days, hold_days)
+                if not result:
+                    _backtest_results[key] = {
+                        "status": "error",
+                        "reason": "Not enough historical data for this symbol",
+                    }
+                    return
+            else:
+                candles = get_stock_ohlcv(sym)
+                if len(candles) < 35:
+                    _backtest_results[key] = {
+                        "status": "error",
+                        "reason": "Not enough daily bars for stock backtest (need at least ~35)",
+                    }
+                    return
+                signals = simulate_signals(candles)
+                result = evaluate_signals(candles, signals, hold_days)
+                dd = calculate_drawdown(result["trades"])
+                result = {**result, **dd}
+
+            _backtest_results[key] = {
+                "status":          "done",
+                "symbol":          sym,
+                "days":            days,
+                "hold_days":       hold_days,
+                "total_signals":   result.get("total_signals", 0),
+                "buy_signals":    result.get("buy_signals", 0),
+                "sell_signals":   result.get("sell_signals", 0),
+                "accuracy":       result.get("accuracy", 0),
+                "avg_gain":       result.get("avg_gain", 0),
+                "avg_loss":       result.get("avg_loss", 0),
+                "max_drawdown":   result.get("max_drawdown_pct", 0),
+                "longest_streak": result.get("longest_losing_streak", 0),
+                "trades":         result.get("trades", [])[-10:],
+            }
+        except Exception as e:
+            _backtest_results[key] = {
+                "status": "error",
+                "reason": str(e),
+            }
+        finally:
+            _backtest_running[key] = False
+
+    _backtest_running[key] = True
+    _backtest_results.pop(key, None)
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    return {"status": "running", "symbol": sym}
+
+
+
+@app.get("/api/settings")
+def api_get_settings():
+    return get_system_settings()
+
+@app.post("/api/settings")
+def api_update_settings(data: dict):
+    update_system_settings(data)
+    return {"status": "success"}
+
+@app.get("/api/trading/state")
+def api_get_trading_state():
+    return get_trading_state()
+
+@app.post("/api/trading/state")
+def api_update_trading_state(data: dict):
+    is_paused = data.get("is_paused", False)
+    update_trading_state(is_paused)
+    return {"status": "success", "is_paused": is_paused}
+
+@app.post("/api/trading/trigger")
+def api_trigger_pipeline():
+    def run():
+        try:
+            run_pipeline()
+        except Exception as e:
+            print(f"Manual pipeline run failed: {e}")
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    return {"status": "started"}
+
+@app.get("/api/logs/stream")
+def stream_logs():
+    def log_generator():
+        log_file = "trading.log"
+        try:
+            with open(log_file, "r") as f:
+                # Read initial lines
+                f.seek(0, 2) # go to end
+                file_size = f.tell()
+                # go back 10KB to send some context
+                f.seek(max(0, file_size - 10000))
+                # read to end
+                lines = f.readlines()
+                for line in lines:
+                    yield f"data: {line}\n\n"
+                
+                # tail the file
+                while True:
+                    line = f.readline()
+                    if not line:
+                        time.sleep(0.5)
+                        continue
+                    yield f"data: {line}\n\n"
+        except FileNotFoundError:
+            yield f"data: Log file not found.\n\n"
+            
+    return StreamingResponse(log_generator(), media_type="text/event-stream")
 
 if __name__ == "__main__":
     import uvicorn

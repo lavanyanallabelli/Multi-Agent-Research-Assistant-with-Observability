@@ -43,6 +43,39 @@ def execute_signal(state: dict) -> dict:
         print(f"  No price data for {symbol} — skipping")
         return dict(state)
 
+     # ── SELL signal — check if we own this asset first ──
+    if action == "SELL":
+        from trading.portfolio import get_open_position_for
+        existing = get_open_position_for(symbol)
+        if not existing:
+            print(f"  [PaperTrader] SELL signal for {symbol} but no open position — skipping")
+            state["paper_trade_opened"] = False
+            return dict(state)
+
+        # close the existing position
+        from trading.portfolio import close_position
+        trade = close_position(
+            position_id=existing["id"],
+            exit_price=price,
+            exit_reason="SELL_SIGNAL",
+        )
+
+        emoji = "✅" if trade["pnl"] >= 0 else "❌"
+        msg = f"""{emoji} <b>PAPER TRADE CLOSED — {symbol}</b>
+📊 Direction: {trade['direction']}
+📈 Entry: ${trade['entry_price']:,.2f}
+📉 Exit: ${trade['exit_price']:,.2f}
+💵 P&L: ${trade['pnl']:+,.2f} ({trade['pnl_pct']:+.2f}%)
+🔔 Reason: SELL signal fired
+
+⚠️ <i>Paper trading — not real money</i>"""
+
+        send_message(msg)
+        print(f"  [PaperTrader] Position closed — {symbol} @ ${price:,.2f}")
+        state["paper_trade_opened"] = False
+        return dict(state)
+        
+ # ── BUY signal — check if we should open a trade ──
     # check if we should open a trade
     can_trade, reason = should_open_trade(symbol, action, confidence, price)
     if not can_trade:

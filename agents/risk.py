@@ -3,11 +3,8 @@ import os
 from datetime import datetime, timedelta
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from config import (
-    MAX_ALERTS_PER_DAY,
-    ALERT_COOLDOWN_HOURS,
-    MIN_CONFIDENCE_SCORE,
-)
+from config import MAX_ALERTS_PER_DAY, ALERT_COOLDOWN_HOURS
+from memory.audit_log import get_system_settings
 from memory.audit_log import total_alerts_today, last_alert_for
 
 # Assets that move together — if one is already signaling
@@ -49,13 +46,13 @@ def risk_agent(state: dict) -> dict:
         return dict(state)
 
     # ── Check 2: Confidence too low ───────────────────────
-    if confidence < MIN_CONFIDENCE_SCORE:
+    if confidence < get_system_settings().get('confidence_threshold', 60):
         print(f"  {symbol}: Confidence {confidence}% below "
-              f"minimum {MIN_CONFIDENCE_SCORE}%")
+              f"minimum {get_system_settings().get('confidence_threshold', 60)}%")
         state["risk_check"] = {
             "passed": False,
             "reason": f"Confidence {confidence}% below minimum "
-                      f"{MIN_CONFIDENCE_SCORE}%"
+                      f"{get_system_settings().get('confidence_threshold', 60)}%"
         }
         return dict(state)
 

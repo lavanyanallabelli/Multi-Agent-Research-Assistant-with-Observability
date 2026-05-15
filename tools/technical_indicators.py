@@ -278,11 +278,18 @@ def score_signal(indicators: dict, price: float, regime: str = "neutral", volume
     score = max(0, min(100, score))
 
     # ── Signal requires BOTH score threshold AND RSI confirmation ──
-    if score >= 70 and rsi is not None and rsi < 50:
+    if score >= 65 and rsi is not None and rsi < 55:
         signal = "BUY"
-    elif score <= 30 and rsi is not None and rsi > 65:
+    elif score <= 35 and rsi is not None and rsi > 55:
         signal = "SELL"
     else:
         signal = "HOLD"
+    # if score >= 70 and rsi is not None and rsi < 50:
+        # signal = "BUY"
+    # elif score <= 30 and rsi is not None and rsi > 65:
+        # signal = "SELL"
+    # else:
+        # signal = "HOLD"
 
     return signal, round(score, 1)
+

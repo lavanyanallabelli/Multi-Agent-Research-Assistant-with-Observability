@@ -1,6 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,906 +8,949 @@
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
     <script>
         tailwind.config = {
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
-                        brand: "#185FA5",
+                        slate: {
+                            850: '#151f32',
+                            950: '#0b1120',
+                        },
+                        primary: '#3b82f6', // blue-500
+                        panel: 'rgba(30, 41, 59, 0.7)', // slate-800 with opacity for glass
+                        panelBorder: 'rgba(51, 65, 85, 0.5)', // slate-700
+                    },
+                    boxShadow: {
+                        glass: '0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2)',
                     }
-                }
-            }
-        }
+                },
+            },
+        };
     </script>
+    <style>
+        body {
+            background-color: #0b1120;
+            color: #f1f5f9;
+        }
+        /* Custom scrollbar for terminal */
+        .term-scroll::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .term-scroll::-webkit-scrollbar-track {
+            background: #0f172a; 
+        }
+        .term-scroll::-webkit-scrollbar-thumb {
+            background: #334155; 
+            border-radius: 4px;
+        }
+        .term-scroll::-webkit-scrollbar-thumb:hover {
+            background: #475569; 
+        }
+    </style>
 </head>
-
-<body class="bg-gray-50 text-gray-900">
+<body class="bg-slate-950 text-slate-200 antialiased selection:bg-primary selection:text-white">
     <div id="root"></div>
+
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useEffect, useMemo, useRef, useState, useCallback } = React;
         const API = "http://localhost:8000";
 
-        const fetch_api = async (path) => {
+        // --- Utils ---
+        async function fetchApi(path) {
             const r = await fetch(`${API}${path}`);
-            return r.json();
-        };
+            const text = await r.text();
+            const data = text ? JSON.parse(text) : null;
+            if (!r.ok) throw new Error(data?.detail || r.statusText || "Request failed");
+            return data;
+        }
 
-        const DASHBOARD_TZ_KEY = "dashboard_tz";
-
-        const TIMEZONE_OPTIONS = (() => {
-            const browser =
-                typeof Intl !== "undefined" && Intl.DateTimeFormat().resolvedOptions
-                    ? Intl.DateTimeFormat().resolvedOptions().timeZone
-                    : "UTC";
-            const set = new Set(["UTC", browser]);
-            [
-                "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Madrid",
-                "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
-                "America/Toronto", "America/Sao_Paulo", "Africa/Johannesburg",
-                "Asia/Dubai", "Asia/Kolkata", "Asia/Singapore", "Asia/Tokyo", "Asia/Shanghai",
-                "Australia/Sydney", "Pacific/Auckland",
-            ].forEach((z) => set.add(z));
-            if (typeof Intl !== "undefined" && Intl.supportedValuesOf) {
-                try {
-                    for (const z of Intl.supportedValuesOf("timeZone")) set.add(z);
-                } catch (_) { /* ignore */ }
-            }
-            const list = [...set];
-            list.sort((a, b) => {
-                if (a === "UTC") return -1;
-                if (b === "UTC") return 1;
-                if (a === browser) return -1;
-                if (b === browser) return 1;
-                return a.localeCompare(b);
+        async function postApi(path, body = {}) {
+            const r = await fetch(`${API}${path}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body),
             });
-            return { browser, list };
-        })();
+            const text = await r.text();
+            const data = text ? JSON.parse(text) : null;
+            if (!r.ok) throw new Error(data?.detail || r.statusText || "Request failed");
+            return data;
+        }
 
-        /** Backend stores naive datetimes in UTC — interpret ambiguous strings as UTC. */
+        function money(value, digits = 2) {
+            const n = Number(value);
+            if (!Number.isFinite(n)) return "$0.00";
+            return `$${n.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+        }
+
+        function num(value, min = 0, max = 2) {
+            const n = Number(value);
+            if (!Number.isFinite(n)) return "0";
+            return n.toLocaleString(undefined, { minimumFractionDigits: min, maximumFractionDigits: max });
+        }
+
+        function pct(value) {
+            const n = Number(value);
+            if (!Number.isFinite(n)) return "0.00%";
+            return `${n.toFixed(2)}%`;
+        }
+
+        function classNames(...items) { return items.filter(Boolean).join(" "); }
+
         function parseBackendUtc(raw) {
-            if (raw == null || raw === "") return null;
+            if (!raw || raw === "None") return null;
             const s = String(raw).trim();
-            if (!s || s === "None") return null;
+            if (!s) return null;
             if (s.includes("T")) {
-                const hasTz =
-                    /[zZ]$/.test(s) ||
-                    /[+-]\d{2}:\d{2}$/.test(s) ||
-                    /[+-]\d{4}$/.test(s);
-                const normalized = hasTz ? s : `${s.replace(/(\.\d+)?$/, "")}Z`;
-                const d = new Date(normalized);
-                return isNaN(d.getTime()) ? null : d;
+                const hasTz = /[zZ]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s);
+                return new Date(hasTz ? s : `${s}Z`);
             }
             const m = s.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/);
-            if (m) {
-                const d = new Date(`${m[1]}T${m[2]}Z`);
-                return isNaN(d.getTime()) ? null : d;
-            }
-            const d = new Date(s);
-            return isNaN(d.getTime()) ? null : d;
+            return m ? new Date(`${m[1]}T${m[2]}Z`) : new Date(s);
         }
 
-        /** preset: "datetime" (with short zone name) | "date" (calendar day only) */
-        function formatInTimeZone(raw, timeZone, preset = "datetime") {
+        function formatTime(raw) {
             const d = parseBackendUtc(raw);
-            if (!d) return "—";
-            const tz = timeZone && String(timeZone).length ? timeZone : "UTC";
-            const opts =
-                preset === "date"
-                    ? {
-                        timeZone: tz,
-                        year: "numeric",
-                        month: "short",
-                        day: "2-digit",
-                    }
-                    : {
-                        timeZone: tz,
-                        year: "numeric",
-                        month: "short",
-                        day: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                        hour12: false,
-                        timeZoneName: "short",
-                    };
-            try {
-                return new Intl.DateTimeFormat("en-GB", opts).format(d);
-            } catch (_) {
-                const fallback = { ...opts, timeZone: "UTC" };
-                return new Intl.DateTimeFormat("en-GB", fallback).format(d);
-            }
+            if (!d || Number.isNaN(d.getTime())) return "-";
+            return new Intl.DateTimeFormat("en-US", { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
         }
 
-        function readStoredTimeZone() {
-            try {
-                const s = localStorage.getItem(DASHBOARD_TZ_KEY);
-                if (s && s.length && TIMEZONE_OPTIONS.list.includes(s)) return s;
-                return "UTC";
-            } catch (_) {
-                return "UTC";
-            }
+        function useAsyncData(loader, deps = [], intervalMs = null) {
+            const [data, setData] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState("");
+
+            const load = async () => {
+                try {
+                    setError("");
+                    const next = await loader();
+                    setData(next);
+                } catch (e) {
+                    setError(e.message || "Request failed");
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                load();
+                if (!intervalMs) return;
+                const t = setInterval(load, intervalMs);
+                return () => clearInterval(t);
+            }, deps);
+
+            return { data, loading, error, reload: load };
         }
 
-        function writeStoredTimeZone(tz) {
-            try {
-                localStorage.setItem(DASHBOARD_TZ_KEY, tz);
-            } catch (_) { /* ignore */ }
+        // --- UI Components ---
+        function Icon({ name, size = 18, className = "" }) {
+            const icons = window.lucide?.icons || {};
+            const iconName = name.replace(/([A-Z])/g, "-$1").toLowerCase();
+            // simple fallback just render a span if missing
+            return <i data-lucide={name} className={className} style={{ width: size, height: size, display: 'inline-block' }}></i>;
         }
 
-        // ── Components ─────────────────────────────────────────────
-
-        function Navbar({ page, setPage, timeZone, onTimeZoneChange }) {
-            const links = [
-                { id: "dashboard", label: "Dashboard" },
-                { id: "positions", label: "Positions" },
-                { id: "trades", label: "Trades" },
-                { id: "watchlist", label: "Watchlist" },
-                { id: "universe", label: "Assets" },
-            ];
-            return (
-                <nav class="bg-white border-b border-gray-200 px-6 py-3 flex flex-wrap items-center justify-between gap-y-3 gap-x-4">
-                    <div class="font-semibold text-gray-800 text-sm">
-                        📈 Swing Trading Assistant
-                    </div>
-                    <div class="flex gap-1">
-                        {links.map(l => (
-                            <button
-                                key={l.id}
-                                onClick={() => setPage(l.id)}
-                                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors
-              ${page === l.id
-                                        ? "bg-blue-50 text-blue-700"
-                                        : "text-gray-500 hover:text-gray-800 hover:bg-gray-100"
-                                    }`}
-                            >
-                                {l.label}
-                            </button>
-                        ))}
-                    </div>
-                    <div class="flex items-center gap-3 flex-wrap justify-end">
-                        <label class="flex items-center gap-2 text-xs text-gray-500">
-                            <span class="whitespace-nowrap shrink-0">Time zone</span>
-                            <select
-                                value={timeZone}
-                                onChange={(e) => onTimeZoneChange(e.target.value)}
-                                class="border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-800 bg-white max-w-[220px] sm:max-w-xs cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                title="All timestamps from the server (UTC) are shown in this zone"
-                                aria-label="Display time zone"
-                            >
-                                {TIMEZONE_OPTIONS.list.map((z) => (
-                                    <option key={z} value={z}>
-                                        {z === TIMEZONE_OPTIONS.browser ? `${z} (this device)` : z}
-                                    </option>
-                                ))}
-                            </select>
-                        </label>
-                        <div class="flex items-center gap-2 text-xs text-gray-400">
-                            <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse inline-block"></span>
-                            Live
-                        </div>
-                    </div>
-                </nav>
-            );
-        }
-
-        function StatCard({ label, value, sub, color = "text-gray-900", onClick, hint }) {
-            const interactive = Boolean(onClick);
-            return (
-                <div
-                    class={`bg-white rounded-xl border border-gray-200 p-4 ${
-                        interactive
-                            ? "cursor-pointer hover:border-blue-300 hover:shadow-sm transition-shadow outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-                            : ""
-                    }`}
-                    onClick={onClick}
-                    role={interactive ? "button" : undefined}
-                    tabIndex={interactive ? 0 : undefined}
-                    title={hint || (interactive ? "View details" : undefined)}
-                    onKeyDown={
-                        interactive
-                            ? (e) => {
-                                if (e.key === "Enter" || e.key === " ") {
-                                    e.preventDefault();
-                                    onClick();
-                                }
-                            }
-                            : undefined
-                    }
-                >
-                    <div class="text-xs text-gray-400 mb-1">{label}</div>
-                    <div class={`text-2xl font-semibold ${color}`}>{value}</div>
-                    {sub && <div class="text-xs text-gray-400 mt-1">{sub}</div>}
-                </div>
-            );
-        }
-
-        function AlertsModal({ open, onClose, alerts, filter, setFilter, loading, timeZone }) {
-            if (!open) return null;
-            const filtered = alerts.filter((a) => {
-                const act = (a.action || "").toUpperCase();
-                if (!filter || filter === "all") return true;
-                return act === String(filter).toUpperCase();
+        // Run lucide.createIcons after renders
+        function useLucide() {
+            useEffect(() => {
+                if (window.lucide) window.lucide.createIcons();
             });
-            return (
-                <div class="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="alerts-modal-title">
-                    <div class="absolute inset-0 bg-black/40" onClick={onClose} />
-                    <div class="relative bg-white rounded-xl border border-gray-200 shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col">
-                        <div class="flex items-center justify-between p-4 border-b border-gray-100 shrink-0">
-                            <h2 id="alerts-modal-title" class="text-base font-semibold text-gray-800">Alerts</h2>
-                            <button type="button" onClick={onClose} class="text-gray-400 hover:text-gray-700 text-2xl leading-none px-2 rounded hover:bg-gray-100" aria-label="Close">×</button>
-                        </div>
-                        <div class="px-4 py-2 flex flex-wrap gap-2 border-b border-gray-50 shrink-0">
-                            {[
-                                { id: "all", label: "All" },
-                                { id: "BUY", label: "Buy" },
-                                { id: "SELL", label: "Sell" },
-                            ].map((x) => (
-                                <button
-                                    key={x.id}
-                                    type="button"
-                                    onClick={() => setFilter(x.id)}
-                                    className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors ${
-                                        filter === x.id
-                                            ? "bg-blue-50 border-blue-200 text-blue-700"
-                                            : "border-gray-200 text-gray-600 hover:bg-gray-50"
-                                    }`}
-                                >
-                                    {x.label}
-                                </button>
-                            ))}
-                        </div>
-                        <div class="overflow-y-auto p-4 space-y-3 min-h-0">
-                            {loading ? (
-                                <div class="text-sm text-gray-400 py-8 text-center">Loading alerts…</div>
-                            ) : filtered.length === 0 ? (
-                                <div class="text-sm text-gray-400 py-8 text-center">No alerts in this view</div>
-                            ) : (
-                                filtered.map((a) => (
-                                    <div key={a.id != null ? `alert-${a.id}` : `${a.sent_at}-${a.symbol}`} class="border border-gray-100 rounded-lg p-3 text-sm space-y-2 bg-gray-50/50">
-                                        <div class="flex flex-wrap items-center justify-between gap-2">
-                                            <span class="font-semibold text-gray-900">{a.symbol}</span>
-                                            <div class="flex items-center gap-2">
-                                                <Badge text={a.action} type={(a.action || "").toLowerCase()} />
-                                                <span class="text-xs text-gray-500">{a.confidence}% conf.</span>
-                                            </div>
-                                        </div>
-                                        <div class="text-xs text-gray-400">{formatInTimeZone(a.sent_at, timeZone)}</div>
-                                        {a.message ? (
-                                            <p class="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap">{a.message}</p>
-                                        ) : (
-                                            <p class="text-gray-400 text-xs italic">No message text stored for this alert</p>
-                                        )}
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-                </div>
-            );
         }
 
-        function Badge({ text, type }) {
-            const styles = {
-                buy: "bg-green-50 text-green-700",
-                sell: "bg-red-50 text-red-700",
-                hold: "bg-yellow-50 text-yellow-700",
-                sent: "bg-blue-50 text-blue-700",
-                open: "bg-blue-50 text-blue-700",
-                closed: "bg-gray-100 text-gray-500",
-                long: "bg-green-50 text-green-700",
-                short: "bg-red-50 text-red-700",
-                crypto: "bg-purple-50 text-purple-700",
-                stock: "bg-orange-50 text-orange-700",
+        function Badge({ children, tone = "gray" }) {
+            const tones = {
+                gray: "bg-slate-800 text-slate-300 border-slate-700",
+                blue: "bg-blue-900/50 text-blue-300 border-blue-800",
+                green: "bg-emerald-900/50 text-emerald-400 border-emerald-800",
+                red: "bg-red-900/50 text-red-400 border-red-800",
+                amber: "bg-amber-900/50 text-amber-400 border-amber-800",
+                slate: "bg-slate-800 text-slate-300 border-slate-700",
             };
             return (
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${styles[type] || "bg-gray-100 text-gray-600"}`}>
-                    {text}
+                <span className={classNames("inline-flex items-center rounded border px-2 py-0.5 text-xs font-medium", tones[tone] || tones.gray)}>
+                    {children}
                 </span>
             );
         }
 
-        // ── Dashboard Page ─────────────────────────────────────────
-
-        function DashboardPage({ timeZone }) {
-            const [summary, setSummary] = useState(null);
-            const [runs, setRuns] = useState([]);
-            const [alerts, setAlerts] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [alertsModalOpen, setAlertsModalOpen] = useState(false);
-            const [alertsModalFilter, setAlertsModalFilter] = useState("all");
-            const [modalAlerts, setModalAlerts] = useState([]);
-            const [alertsModalLoading, setAlertsModalLoading] = useState(false);
-
-            const openAlertsModal = async (initialFilter = "all") => {
-                setAlertsModalFilter(initialFilter);
-                setAlertsModalOpen(true);
-                setAlertsModalLoading(true);
-                try {
-                    const data = await fetch_api("/api/alerts?limit=200");
-                    setModalAlerts(Array.isArray(data) ? data : []);
-                } catch (e) {
-                    setModalAlerts([]);
-                } finally {
-                    setAlertsModalLoading(false);
-                }
+        function Button({ children, icon, tone = "default", className = "", ...props }) {
+            const tones = {
+                default: "border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700",
+                primary: "border-blue-600 bg-blue-600 text-white hover:bg-blue-500",
+                amber: "border-amber-600 bg-amber-600 text-white hover:bg-amber-500",
+                danger: "border-red-600 bg-red-600 text-white hover:bg-red-500",
+                success: "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-500",
             };
-
-            const load = async () => {
-                const [s, r, a] = await Promise.all([
-                    fetch_api("/api/summary"),
-                    fetch_api("/api/runs?limit=8"),
-                    fetch_api("/api/alerts?limit=8"),
-                ]);
-                setSummary(s);
-                setRuns(r);
-                setAlerts(a);
-                setLoading(false);
-            };
-
-            useEffect(() => { load(); const t = setInterval(load, 30000); return () => clearInterval(t); }, []);
-
-            if (loading) return <div class="p-8 text-gray-400">Loading...</div>;
-
-            const p = summary?.portfolio || {};
-
             return (
-                <div class="p-6 space-y-6">
-                    <AlertsModal
-                        open={alertsModalOpen}
-                        onClose={() => setAlertsModalOpen(false)}
-                        alerts={modalAlerts}
-                        filter={alertsModalFilter}
-                        setFilter={setAlertsModalFilter}
-                        loading={alertsModalLoading}
-                        timeZone={timeZone}
+                <button
+                    type="button"
+                    className={classNames(
+                        "inline-flex h-9 items-center justify-center gap-2 rounded border px-4 text-sm font-medium shadow-glass transition-all disabled:cursor-not-allowed disabled:opacity-50",
+                        tones[tone],
+                        className,
+                    )}
+                    {...props}
+                >
+                    {icon && <i data-lucide={icon} style={{width:16, height:16}}></i>}
+                    {children}
+                </button>
+            );
+        }
+
+        function Card({ title, eyebrow, action, children, className = "" }) {
+            return (
+                <section className={classNames("rounded-xl border border-panelBorder bg-panel backdrop-blur-md shadow-glass", className)}>
+                    {(title || eyebrow || action) && (
+                        <div className="flex items-start justify-between gap-4 border-b border-panelBorder px-5 py-4">
+                            <div>
+                                {eyebrow && <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">{eyebrow}</div>}
+                                {title && <h2 className="text-base font-semibold text-slate-100">{title}</h2>}
+                            </div>
+                            {action}
+                        </div>
+                    )}
+                    <div className="p-5">{children}</div>
+                </section>
+            );
+        }
+
+        function Metric({ label, value, sub, tone = "dark" }) {
+            const color = tone === "green" ? "text-emerald-400" : tone === "red" ? "text-red-400" : "text-white";
+            return (
+                <div className="rounded-xl border border-panelBorder bg-slate-800/50 p-4 shadow-glass backdrop-blur-sm">
+                    <div className="text-xs font-medium uppercase tracking-wider text-slate-400">{label}</div>
+                    <div className={classNames("mt-2 text-2xl font-bold tracking-tight drop-shadow-sm", color)}>{value}</div>
+                    {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
+                </div>
+            );
+        }
+
+        function Table({ columns, rows, rowKey, emptyTitle }) {
+            if (!rows || rows.length === 0) return <div className="py-8 text-center text-slate-500">{emptyTitle || "No data"}</div>;
+            return (
+                <div className="overflow-x-auto rounded-lg border border-panelBorder">
+                    <table className="min-w-full divide-y divide-panelBorder text-sm">
+                        <thead className="bg-slate-800/80">
+                            <tr>
+                                {columns.map((c, i) => (
+                                    <th key={c.key || i} className={classNames("whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400", c.align === "right" && "text-right")}>
+                                        {c.label}
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-panelBorder bg-transparent">
+                            {rows.map((row, index) => (
+                                <tr key={rowKey ? rowKey(row, index) : index} className="hover:bg-slate-800/50 transition-colors">
+                                    {columns.map((c, i) => (
+                                        <td key={c.key || i} className={classNames("whitespace-nowrap px-4 py-3 text-slate-300", c.align === "right" && "text-right")}>
+                                            {c.render ? c.render(row, index) : row[c.key]}
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            );
+        }
+
+        function Field({ label, value, onChange, type = "text" }) {
+            return (
+                <label className="block mb-3">
+                    <span className="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">{label}</span>
+                    <input
+                        type={type}
+                        className="h-10 w-full rounded border border-panelBorder bg-slate-900/50 px-3 text-sm text-slate-200 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                        value={value}
+                        onChange={(e) => onChange(e.target.value)}
                     />
-                    <div class="flex items-center justify-between">
-                        <h1 class="text-lg font-semibold">Dashboard</h1>
-                        <button onClick={load} class="text-xs text-blue-600 border border-blue-200 px-3 py-1 rounded-lg hover:bg-blue-50">Refresh</button>
+                </label>
+            );
+        }
+
+        function Loading() {
+            return <div className="p-8 text-center text-slate-400 flex items-center justify-center gap-3"><i data-lucide="loader-2" className="animate-spin"></i> Loading...</div>;
+        }
+
+        // --- Pages ---
+
+        function OverviewPage() {
+            const { data, loading, error, reload } = useAsyncData(async () => {
+                const [summary, runs, alerts, simPositions, brokerAccount] = await Promise.all([
+                    fetchApi("/api/summary"),
+                    fetchApi("/api/runs?limit=8"),
+                    fetchApi("/api/alerts?limit=8"),
+                    fetchApi("/api/positions"),
+                    fetchApi("/api/alpaca/account").catch(() => ({ status: "error" })),
+                ]);
+                return { summary, runs, alerts, simPositions, brokerAccount };
+            }, [], 30000);
+
+            useLucide();
+
+            if (loading) return <Loading />;
+            if (error) return <div className="text-red-400">Error: {error}</div>;
+
+            const p = data.summary?.portfolio || {};
+            const broker = data.brokerAccount || {};
+
+            return (
+                <div className="space-y-6 fade-in">
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <h1 className="text-2xl font-bold text-white tracking-tight">Overview</h1>
+                            <p className="text-sm text-slate-400 mt-1">High-level view of your multi-agent trading system.</p>
+                        </div>
+                        <Button icon="refresh-cw" onClick={reload}>Refresh</Button>
                     </div>
 
-                    {/* Portfolio cards */}
-                    <div>
-                        <div class="text-xs text-gray-400 uppercase tracking-wide mb-3">Portfolio</div>
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            <StatCard label="Total Value" value={`$${p.total_value?.toLocaleString() || 0}`} />
-                            <StatCard label="Cash Balance" value={`$${p.cash_balance?.toLocaleString() || 0}`} />
-                            <StatCard
-                                label="Total P&L"
-                                value={`$${p.total_pnl?.toFixed(2) || 0}`}
-                                color={p.total_pnl >= 0 ? "text-green-600" : "text-red-600"}
-                                sub={`${p.total_pnl_pct?.toFixed(2) || 0}%`}
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                        <Metric label="Simulator Value" value={money(p.total_value)} sub={`${data.simPositions?.length || 0} open simulator positions`} />
+                        <Metric label="Simulator Cash" value={money(p.cash_balance)} sub={`${p.total_trades || 0} completed trades`} />
+                        <Metric label="Simulator P/L" value={money(p.total_pnl)} sub={pct(p.total_pnl_pct)} tone={Number(p.total_pnl) >= 0 ? "green" : "red"} />
+                        <Metric label="Alpaca Equity" value={broker.status === "error" ? "Unavailable" : money(broker.equity ?? broker.portfolio_value)} />
+                    </div>
+
+                    <div className="grid gap-6 xl:grid-cols-2">
+                        <Card title="Recent Pipeline Runs" eyebrow="Automation">
+                            <Table
+                                rows={data.runs}
+                                emptyTitle="No pipeline runs"
+                                columns={[
+                                    { key: "time", label: "Time", render: r => formatTime(r.triggered_at) },
+                                    { key: "decision", label: "Decision", render: r => r.symbol ? <span className="font-semibold text-white">{r.action} {r.symbol}</span> : <span className="text-slate-500">None</span> },
+                                    { key: "alert", label: "Alert", render: r => <Badge tone={r.alert_sent ? "green" : "slate"}>{r.alert_sent ? "Sent" : "No"}</Badge> },
+                                ]}
                             />
-                            <StatCard label="Win Rate" value={`${p.win_rate || 0}%`} sub={`${p.total_trades || 0} trades`} />
-                        </div>
-                    </div>
-
-                    {/* Pipeline stats */}
-                    <div>
-                        <div class="text-xs text-gray-400 uppercase tracking-wide mb-3">Pipeline</div>
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            <StatCard label="Total Runs" value={summary?.total_runs || 0} />
-                            <StatCard
-                                label="Alerts Sent"
-                                value={summary?.total_alerts || 0}
-                                sub={
-                                    (summary?.total_alerts || 0) > 0
-                                        ? `${summary?.buy_alerts || 0} buy · ${summary?.sell_alerts || 0} sell`
-                                        : undefined
-                                }
-                                onClick={() => openAlertsModal("all")}
-                                hint="View all sent alerts"
+                        </Card>
+                        <Card title="Recent Alerts" eyebrow="Notifications">
+                            <Table
+                                rows={data.alerts}
+                                emptyTitle="No alerts sent"
+                                columns={[
+                                    { key: "time", label: "Time", render: r => formatTime(r.sent_at) },
+                                    { key: "symbol", label: "Symbol", render: r => <span className="font-semibold text-white">{r.symbol}</span> },
+                                    { key: "action", label: "Action", render: r => <Badge tone={r.action === "BUY" ? "green" : "red"}>{r.action}</Badge> },
+                                    { key: "conf", label: "Conf.", align: "right", render: r => `${r.confidence}%` },
+                                ]}
                             />
-                            <StatCard label="Avg Confidence" value={`${summary?.avg_confidence || 0}%`} />
-                            <StatCard label="Total Cost" value={`$${summary?.total_cost || 0}`} sub={`$${summary?.avg_cost_per_run || 0}/run`} />
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Recent runs */}
-                        <div class="bg-white rounded-xl border border-gray-200 p-4">
-                            <div class="text-sm font-medium text-gray-600 mb-3">Recent Pipeline Runs</div>
-                            {runs.length === 0
-                                ? <div class="text-sm text-gray-400">No runs yet</div>
-                                : <div class="space-y-2">
-                                    {runs.map((r, i) => (
-                                        <div key={i} class="flex items-center justify-between text-sm py-1 border-b border-gray-50 last:border-0">
-                                            <div class="text-gray-400 text-xs">{formatInTimeZone(r.triggered_at, timeZone)}</div>
-                                            <div class="flex items-center gap-2">
-                                                {r.action
-                                                    ? <Badge text={`${r.action} ${r.symbol}`} type={r.action?.toLowerCase()} />
-                                                    : <span class="text-gray-300 text-xs">—</span>
-                                                }
-                                                {r.alert_sent && <Badge text="Sent" type="sent" />}
-                                            </div>
-                                            <div class="text-gray-400 text-xs">${r.total_cost_usd}</div>
-                                        </div>
-                                    ))}
-                                </div>
-                            }
-                        </div>
-
-                        {/* Recent alerts */}
-                        <div class="bg-white rounded-xl border border-gray-200 p-4">
-                            <div class="text-sm font-medium text-gray-600 mb-3">Recent Alerts</div>
-                            {alerts.length === 0
-                                ? <div class="text-sm text-gray-400">No alerts sent yet</div>
-                                : <div class="space-y-2">
-                                    {alerts.map((a, i) => (
-                                        <div key={a.id != null ? `a-${a.id}` : i} class="py-2 border-b border-gray-50 last:border-0 space-y-1">
-                                            <div class="flex items-center justify-between text-sm gap-2">
-                                                <div class="text-gray-400 text-xs shrink-0">{formatInTimeZone(a.sent_at, timeZone)}</div>
-                                                <div class="font-medium">{a.symbol}</div>
-                                                <Badge text={a.action} type={a.action?.toLowerCase()} />
-                                                <div class="text-gray-500 text-xs shrink-0">{a.confidence}%</div>
-                                            </div>
-                                            {a.message ? (
-                                                <p class="text-xs text-gray-600 line-clamp-2 pl-0">{a.message}</p>
-                                            ) : null}
-                                        </div>
-                                    ))}
-                                </div>
-                            }
-                        </div>
+                        </Card>
                     </div>
                 </div>
             );
         }
 
-        // ── Positions Page ─────────────────────────────────────────
-
-        function PositionsPage({ timeZone }) {
-            const [positions, setPositions] = useState([]);
-            const [loading, setLoading] = useState(true);
-
-            useEffect(() => {
-                fetch_api("/api/positions").then(d => { setPositions(d); setLoading(false); });
+        function SimulatorPage() {
+            const { data, loading, error, reload } = useAsyncData(async () => {
+                const [portfolio, positions, trades] = await Promise.all([
+                    fetchApi("/api/portfolio"),
+                    fetchApi("/api/positions"),
+                    fetchApi("/api/trades?limit=50"),
+                ]);
+                return { portfolio, positions, trades };
             }, []);
+            const [closingId, setClosingId] = useState(null);
+            useLucide();
 
-            if (loading) return <div class="p-8 text-gray-400">Loading...</div>;
+            const closePosition = async (position) => {
+                const raw = window.prompt(`Close simulator ${position.symbol} at exit price`, String(position.entry_price || ""));
+                if (raw == null) return;
+                setClosingId(position.id);
+                try {
+                    await postApi("/api/simulator/positions/close", { position_id: position.id, exit_price: Number(raw) });
+                    await reload();
+                } catch (e) {
+                    alert(e.message);
+                } finally {
+                    setClosingId(null);
+                }
+            };
+
+            if (loading) return <Loading />;
+            if (error) return <div className="text-red-400">Error: {error}</div>;
 
             return (
-                <div class="p-6">
-                    <h1 class="text-lg font-semibold mb-6">Open Positions</h1>
-                    {positions.length === 0
-                        ? <div class="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400">No open positions</div>
-                        : <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                            <table class="w-full text-sm">
-                                <thead class="bg-gray-50 text-xs text-gray-400 uppercase">
-                                    <tr>
-                                        {["Symbol", "Direction", "Entry", "Qty", "Value", "Stop Loss", "Take Profit", "Opened"].map(h => (
-                                            <th key={h} class="px-4 py-3 text-left font-medium">{h}</th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-gray-50">
-                                    {positions.map((p, i) => (
-                                        <tr key={i} class="hover:bg-gray-50">
-                                            <td class="px-4 py-3 font-medium">{p.symbol}</td>
-                                            <td class="px-4 py-3"><Badge text={p.direction} type={p.direction?.toLowerCase()} /></td>
-                                            <td class="px-4 py-3">${p.entry_price?.toLocaleString()}</td>
-                                            <td class="px-4 py-3">{p.quantity?.toFixed(6)}</td>
-                                            <td class="px-4 py-3">${p.position_value?.toLocaleString()}</td>
-                                            <td class="px-4 py-3 text-red-500">${p.stop_loss?.toLocaleString()}</td>
-                                            <td class="px-4 py-3 text-green-600">${p.take_profit?.toLocaleString()}</td>
-                                            <td class="px-4 py-3 text-gray-400 text-xs">{formatInTimeZone(p.opened_at, timeZone)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                <div className="space-y-6 fade-in">
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
+                                Simulator <Badge tone="blue">Internal Book</Badge>
+                            </h1>
+                            <p className="text-sm text-slate-400 mt-1">Virtual portfolio for backtesting and strategy evaluation.</p>
                         </div>
-                    }
+                        <Button icon="refresh-cw" onClick={reload}>Refresh</Button>
+                    </div>
+
+                    <Card title="Open Positions" eyebrow="Active Trades">
+                        <Table
+                            rows={data.positions}
+                            rowKey={r => r.id}
+                            emptyTitle="No open positions"
+                            columns={[
+                                { key: "symbol", label: "Symbol", render: r => <span className="font-semibold text-white">{r.symbol}</span> },
+                                { key: "dir", label: "Dir", render: r => <Badge tone={r.direction === "LONG" ? "green" : "red"}>{r.direction}</Badge> },
+                                { key: "entry", label: "Entry", render: r => money(r.entry_price) },
+                                { key: "qty", label: "Qty", render: r => num(r.quantity, 0, 6) },
+                                { key: "value", label: "Value", render: r => money(r.position_value) },
+                                { key: "stop", label: "Stop", render: r => <span className="text-red-400">{money(r.stop_loss)}</span> },
+                                { key: "tp", label: "TP", render: r => <span className="text-emerald-400">{money(r.take_profit)}</span> },
+                                { key: "action", align: "right", render: r => (
+                                    <Button tone="default" className="h-7 px-2 text-xs" onClick={() => closePosition(r)} disabled={closingId === r.id}>
+                                        {closingId === r.id ? "..." : "Close"}
+                                    </Button>
+                                )},
+                            ]}
+                        />
+                    </Card>
+
+                    <Card title="Trade History" eyebrow="Closed Positions">
+                        <Table
+                            rows={data.trades}
+                            rowKey={r => r.id}
+                            emptyTitle="No trades closed yet"
+                            columns={[
+                                { key: "symbol", label: "Symbol", render: r => <span className="font-medium text-white">{r.symbol}</span> },
+                                { key: "dir", label: "Side", render: r => <Badge tone={r.direction === "LONG" ? "green" : "red"}>{r.direction}</Badge> },
+                                { key: "entry", label: "Entry", render: r => money(r.entry_price) },
+                                { key: "exit", label: "Exit", render: r => money(r.exit_price) },
+                                { key: "pnl", label: "P/L", render: r => <span className={Number(r.pnl) >= 0 ? "text-emerald-400" : "text-red-400"}>{money(r.pnl)}</span> },
+                                { key: "reason", label: "Reason", render: r => <Badge>{r.exit_reason}</Badge> },
+                                { key: "date", label: "Closed", render: r => formatTime(r.closed_at) },
+                            ]}
+                        />
+                    </Card>
                 </div>
             );
         }
 
-        // ── Trades Page ────────────────────────────────────────────
 
-        function TradesPage({ timeZone }) {
-            const [trades, setTrades] = useState([]);
-            const [loading, setLoading] = useState(true);
-
-            useEffect(() => {
-                fetch_api("/api/trades?limit=50").then(d => { setTrades(d); setLoading(false); });
+        function WatchlistPage() {
+            const { data, loading, error, reload } = useAsyncData(async () => {
+                const [assets, watchlist] = await Promise.all([
+                    fetchApi("/api/assets"),
+                    fetchApi("/api/watchlist"),
+                ]);
+                return { assets, watchlist };
             }, []);
-
-            if (loading) return <div class="p-8 text-gray-400">Loading...</div>;
-
-            return (
-                <div class="p-6">
-                    <h1 class="text-lg font-semibold mb-6">Trade History</h1>
-                    {trades.length === 0
-                        ? <div class="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400">No completed trades yet</div>
-                        : <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                            <table class="w-full text-sm">
-                                <thead class="bg-gray-50 text-xs text-gray-400 uppercase">
-                                    <tr>
-                                        {["Symbol", "Direction", "Entry", "Exit", "Qty", "P&L", "P&L %", "Exit Reason", "Closed"].map(h => (
-                                            <th key={h} class="px-4 py-3 text-left font-medium">{h}</th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-gray-50">
-                                    {trades.map((t, i) => (
-                                        <tr key={i} class="hover:bg-gray-50">
-                                            <td class="px-4 py-3 font-medium">{t.symbol}</td>
-                                            <td class="px-4 py-3"><Badge text={t.direction} type={t.direction?.toLowerCase()} /></td>
-                                            <td class="px-4 py-3">${t.entry_price?.toLocaleString()}</td>
-                                            <td class="px-4 py-3">${t.exit_price?.toLocaleString()}</td>
-                                            <td class="px-4 py-3">{t.quantity?.toFixed(6)}</td>
-                                            <td class={`px-4 py-3 font-medium ${t.pnl >= 0 ? "text-green-600" : "text-red-500"}`}>
-                                                ${t.pnl?.toFixed(2)}
-                                            </td>
-                                            <td class={`px-4 py-3 ${t.pnl_pct >= 0 ? "text-green-600" : "text-red-500"}`}>
-                                                {t.pnl_pct?.toFixed(2)}%
-                                            </td>
-                                            <td class="px-4 py-3">
-                                                <Badge
-                                                    text={t.exit_reason}
-                                                    type={t.exit_reason === "TAKE_PROFIT" ? "buy" : t.exit_reason === "STOP_LOSS" ? "sell" : "hold"}
-                                                />
-                                            </td>
-                                            <td class="px-4 py-3 text-gray-400 text-xs">{formatInTimeZone(t.closed_at, timeZone)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    }
-                </div>
-            );
-        }
-
-        // ── Watchlist Page ─────────────────────────────────────────
-
-        function WatchlistPage({ timeZone }) {
-            const [watchlist, setWatchlist] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [removing, setRemoving] = useState(null);
-
-            const load = () => {
-                fetch_api("/api/watchlist").then(d => { setWatchlist(d); setLoading(false); });
-            };
-
-            useEffect(() => { load(); }, []);
-
-            const remove = async (symbol) => {
-                setRemoving(symbol);
-                await fetch(`${API}/api/watchlist/remove`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ symbol }),
-                });
-                setRemoving(null);
-                load();
-            };
-
-            if (loading) return <div class="p-8 text-gray-400">Loading...</div>;
-
-            return (
-                <div class="p-6">
-                    <div class="flex items-center justify-between mb-6">
-                        <h1 class="text-lg font-semibold">Watchlist</h1>
-                        <div class="text-sm text-gray-400">{watchlist.length} assets monitored</div>
-                    </div>
-                    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                        <table class="w-full text-sm">
-                            <thead class="bg-gray-50 text-xs text-gray-400 uppercase">
-                                <tr>
-                                    {["Symbol", "Type", "Added", "Action"].map(h => (
-                                        <th key={h} class="px-4 py-3 text-left font-medium">{h}</th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-50">
-                                {watchlist.map((w, i) => (
-                                    <tr key={i} class="hover:bg-gray-50">
-                                        <td class="px-4 py-3 font-medium" title={w.name ? String(w.name) : w.symbol}>{w.symbol}</td>
-                                        <td class="px-4 py-3"><Badge text={w.asset_type} type={w.asset_type} /></td>
-                                        <td class="px-4 py-3 text-gray-400 text-xs">{formatInTimeZone(w.added_at, timeZone, "date")}</td>
-                                        <td class="px-4 py-3">
-                                            <button
-                                                onClick={() => remove(w.symbol)}
-                                                disabled={removing === w.symbol}
-                                                class="text-xs text-red-500 hover:text-red-700 border border-red-200 px-2 py-1 rounded hover:bg-red-50 disabled:opacity-50"
-                                            >
-                                                {removing === w.symbol ? "Removing..." : "Remove"}
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            );
-        }
-
-        // ── Universe Page ──────────────────────────────────────────
-
-        function UniversePage() {
-            const [assets, setAssets] = useState([]);
-            const [loading, setLoading] = useState(true);
-            const [adding, setAdding] = useState(null);
-            const [newAsset, setNewAsset] = useState({ symbol: "", name: "", asset_type: "crypto", coingecko_id: "" });
-            const [showForm, setShowForm] = useState(false);
-            const [editOpen, setEditOpen] = useState(false);
-            const [editForm, setEditForm] = useState({ symbol: "", name: "", asset_type: "crypto", coingecko_id: "" });
-            const [deleting, setDeleting] = useState(null);
-
-            const load = () => {
-                fetch_api("/api/assets").then(d => { setAssets(d); setLoading(false); });
-            };
-
-            useEffect(() => { load(); }, []);
-
+            
+            const [toggling, setToggling] = useState({});
+            
             const toggleWatchlist = async (symbol, inWatchlist) => {
-                setAdding(symbol);
-                const endpoint = inWatchlist ? "/api/watchlist/remove" : "/api/watchlist/add";
-                await fetch(`${API}${endpoint}`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ symbol }),
-                });
-                setAdding(null);
-                load();
-            };
-
-            const addNewAsset = async () => {
-                const r = await fetch(`${API}/api/assets/add`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(newAsset),
-                });
-                let data = {};
-                try { data = await r.json(); } catch (_) {}
-                if (!r.ok) {
-                    alert(typeof data.detail === "string" ? data.detail : "Could not add asset");
-                    return;
+                setToggling(prev => ({ ...prev, [symbol]: true }));
+                try {
+                    if (inWatchlist) {
+                        await postApi("/api/watchlist/remove", { symbol });
+                    } else {
+                        await postApi("/api/watchlist/add", { symbol });
+                    }
+                    await reload();
+                } catch (e) {
+                    alert(e.message);
+                } finally {
+                    setToggling(prev => ({ ...prev, [symbol]: false }));
                 }
-                setNewAsset({ symbol: "", name: "", asset_type: "crypto", coingecko_id: "" });
-                setShowForm(false);
-                load();
             };
+            
+            useLucide();
+            
+            if (loading) return <Loading />;
+            if (error) return <div className="text-red-400">Error: {error}</div>;
+            
+            const watchlistSymbols = new Set(data.watchlist.map(w => w.symbol));
+            const assets = data.assets || [];
+            
+            return (
+                <div className="space-y-6 fade-in">
+                    <div>
+                        <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
+                            Watchlist & Universe <i data-lucide="list" className="text-primary" style={{width:20}}></i>
+                        </h1>
+                        <p className="text-sm text-slate-400 mt-1">Manage which assets the pipeline monitors.</p>
+                    </div>
+                    
+                    <Card title="Asset Universe" eyebrow="Trading Pairs">
+                        <Table
+                            rows={assets}
+                            rowKey={r => r.symbol}
+                            emptyTitle="No assets found"
+                            columns={[
+                                { key: "symbol", label: "Symbol", render: r => <span className="font-semibold text-white">{r.symbol}</span> },
+                                { key: "name", label: "Name", render: r => r.name },
+                                { key: "type", label: "Type", render: r => <Badge tone={r.asset_type === "crypto" ? "amber" : "blue"}>{r.asset_type.toUpperCase()}</Badge> },
+                                { key: "status", label: "Watchlist", render: r => {
+                                    const inW = watchlistSymbols.has(r.symbol);
+                                    return (
+                                        <button 
+                                            disabled={toggling[r.symbol]}
+                                            onClick={() => toggleWatchlist(r.symbol, inW)}
+                                            className={classNames(
+                                                "px-3 py-1 rounded text-xs font-medium transition-colors",
+                                                inW ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30" : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+                                            )}
+                                        >
+                                            {toggling[r.symbol] ? "..." : (inW ? "Active" : "Add")}
+                                        </button>
+                                    );
+                                }},
+                            ]}
+                        />
+                    </Card>
+                </div>
+            );
+        }
 
-            const openEdit = (a) => {
-                setEditForm({
-                    symbol: a.symbol,
-                    name: a.name || "",
-                    asset_type: a.asset_type || "crypto",
-                    coingecko_id: a.coingecko_id || "",
-                });
-                setEditOpen(true);
-            };
-
-            const saveEdit = async () => {
-                const r = await fetch(`${API}/api/assets/update`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        symbol: editForm.symbol,
-                        name: editForm.name,
-                        asset_type: editForm.asset_type,
-                        coingecko_id: editForm.coingecko_id || null,
-                    }),
-                });
-                let data = {};
-                try { data = await r.json(); } catch (_) {}
-                if (!r.ok) {
-                    alert(typeof data.detail === "string" ? data.detail : "Update failed");
-                    return;
+        function BacktestingPage() {
+            const [symbol, setSymbol] = useState("");
+            const [days, setDays] = useState(90);
+            const [holdDays, setHoldDays] = useState(3);
+            const [result, setResult] = useState(null);
+            const [running, setRunning] = useState(false);
+            const [error, setError] = useState("");
+            useLucide();
+            
+            const runBacktest = async (e) => {
+                e.preventDefault();
+                if (!symbol) return;
+                setRunning(true);
+                setError("");
+                setResult(null);
+                
+                try {
+                    const res = await postApi(`/api/backtest/${symbol}?days=${days}&hold_days=${holdDays}`);
+                    if (res.status === "error") {
+                        setError(res.reason);
+                        setRunning(false);
+                        return;
+                    }
+                    
+                    // Start polling
+                    const poll = setInterval(async () => {
+                        try {
+                            const check = await fetchApi(`/api/backtest/${symbol}?days=${days}&hold_days=${holdDays}`);
+                            if (check.status !== "running") {
+                                clearInterval(poll);
+                                setRunning(false);
+                                if (check.status === "error") {
+                                    setError(check.reason);
+                                } else {
+                                    setResult(check);
+                                }
+                            }
+                        } catch (err) {
+                            clearInterval(poll);
+                            setRunning(false);
+                            setError("Polling error: " + err.message);
+                        }
+                    }, 2000);
+                } catch(err) {
+                    setError("Failed to start backtest: " + err.message);
+                    setRunning(false);
                 }
-                setEditOpen(false);
-                load();
             };
+            
+            return (
+                <div className="max-w-3xl space-y-6 fade-in">
+                    <div>
+                        <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
+                            Backtesting <i data-lucide="line-chart" className="text-primary" style={{width:20}}></i>
+                        </h1>
+                        <p className="text-sm text-slate-400 mt-1">Evaluate strategy performance on historical data.</p>
+                    </div>
+                    
+                    <Card title="Configure Run">
+                        <form onSubmit={runBacktest} className="space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <Field label="Symbol" type="text" value={symbol} onChange={setSymbol} placeholder="e.g. BTC" />
+                                <Field label="Lookback Days" type="number" value={days} onChange={setDays} />
+                                <Field label="Hold Days" type="number" value={holdDays} onChange={setHoldDays} />
+                            </div>
+                            <div className="flex justify-end pt-2">
+                                <Button tone="primary" type="submit" icon="play" disabled={running || !symbol}>
+                                    {running ? "Running..." : "Run Backtest"}
+                                </Button>
+                            </div>
+                            {error && <div className="text-red-400 text-sm">{error}</div>}
+                        </form>
+                    </Card>
+                    
+                    {running && (
+                        <Card>
+                            <div className="py-12 flex flex-col items-center justify-center text-slate-400">
+                                <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mb-4"></div>
+                                Running historical simulation for {symbol.toUpperCase()}...
+                            </div>
+                        </Card>
+                    )}
+                    
+                    {result && result.status !== "error" && result.status !== "not_run" && (
+                        <Card title="Results" eyebrow={result.symbol}>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                                <Metric label="Accuracy" value={(result.accuracy || 0).toFixed(1) + "%"} tone="green" />
+                                <Metric label="Total Signals" value={result.total_signals || 0} />
+                                <Metric label="Max Drawdown" value={(result.max_drawdown_pct || 0).toFixed(2) + "%"} tone="red" />
+                                <Metric label="Avg Gain" value={(result.avg_gain || 0).toFixed(2) + "%"} tone="green" />
+                            </div>
+                        </Card>
+                    )}
+                </div>
+            );
+        }
 
-            const removeAsset = async (symbol) => {
-                if (!window.confirm(`Remove ${symbol} from the universe? It will disappear from this list and be taken off the watchlist. Historical records stay in the database.`))
-                    return;
-                setDeleting(symbol);
-                const r = await fetch(`${API}/api/assets/delete`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ symbol }),
-                });
-                let data = {};
-                try { data = await r.json(); } catch (_) {}
-                setDeleting(null);
-                if (!r.ok) {
-                    alert(typeof data.detail === "string" ? data.detail : "Delete failed");
-                    return;
+        function AlpacaPage() {
+
+            const { data, loading, error, reload } = useAsyncData(async () => {
+                const [account, positions] = await Promise.all([
+                    fetchApi("/api/alpaca/account"),
+                    fetchApi("/api/alpaca/positions"),
+                ]);
+                return { account, positions };
+            }, [], 60000);
+            useLucide();
+
+            if (loading) return <Loading />;
+            if (error) return <div className="text-red-400">Error: {error}</div>;
+
+            const a = data.account || {};
+            const pos = Array.isArray(data.positions?.positions) ? data.positions.positions : [];
+
+            const closeAlpacaPosition = async (symbol) => {
+                if (!confirm(`Are you sure you want to close position ${symbol} at market price?`)) return;
+                try {
+                    await postApi("/api/alpaca/positions/close", { symbol });
+                    alert(`Market close order submitted for ${symbol}.`);
+                    reload();
+                } catch(e) {
+                    alert("Failed to close position: " + e.message);
                 }
-                load();
             };
-
-            if (loading) return <div class="p-8 text-gray-400">Loading...</div>;
 
             return (
-                <div class="p-6">
-                    {editOpen && (
-                        <div class="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="edit-asset-title">
-                            <div class="absolute inset-0 bg-black/40" onClick={() => setEditOpen(false)} />
-                            <div class="relative bg-white rounded-xl border border-gray-200 shadow-xl max-w-lg w-full p-4">
-                                <div class="flex items-center justify-between mb-3">
-                                    <h2 id="edit-asset-title" class="text-base font-semibold text-gray-800">Edit asset</h2>
-                                    <button type="button" onClick={() => setEditOpen(false)} class="text-gray-400 hover:text-gray-700 text-xl px-2" aria-label="Close">×</button>
-                                </div>
-                                <p class="text-xs text-gray-500 mb-3">Ticker cannot be changed. Use delete and add if you need a different symbol. Name is optional metadata (hover on Assets table shows it).</p>
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <div>
-                                        <label class="text-xs text-gray-500 block mb-1">Symbol</label>
-                                        <input class="border border-gray-200 rounded-lg px-3 py-2 text-sm w-full bg-gray-50 text-gray-600" readOnly value={editForm.symbol} />
-                                    </div>
-                                    <div>
-                                        <label class="text-xs text-gray-500 block mb-1">Display name (optional)</label>
-                                        <input class="border border-gray-200 rounded-lg px-3 py-2 text-sm w-full" placeholder="e.g. Apple Inc." value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
-                                    </div>
-                                    <div>
-                                        <label class="text-xs text-gray-500 block mb-1">Type</label>
-                                        <select class="border border-gray-200 rounded-lg px-3 py-2 text-sm w-full" value={editForm.asset_type} onChange={e => setEditForm({ ...editForm, asset_type: e.target.value })}>
-                                            <option value="crypto">Crypto</option>
-                                            <option value="stock">Stock</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label class="text-xs text-gray-500 block mb-1">CoinGecko ID</label>
-                                        <input class="border border-gray-200 rounded-lg px-3 py-2 text-sm w-full" placeholder="e.g. solana" value={editForm.coingecko_id} onChange={e => setEditForm({ ...editForm, coingecko_id: e.target.value })} />
-                                    </div>
-                                </div>
-                                <div class="flex gap-2 mt-4 justify-end">
-                                    <button type="button" onClick={() => setEditOpen(false)} class="text-sm text-gray-600 border border-gray-200 px-4 py-1.5 rounded-lg hover:bg-gray-50">Cancel</button>
-                                    <button type="button" onClick={saveEdit} class="text-sm bg-blue-600 text-white px-4 py-1.5 rounded-lg hover:bg-blue-700">Save</button>
-                                </div>
-                            </div>
+                <div className="space-y-6 fade-in">
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
+                                Alpaca Broker <Badge tone="amber">{a.paper === false ? "Live" : "Paper API"}</Badge>
+                            </h1>
+                            <p className="text-sm text-slate-400 mt-1">Real or simulated execution via Alpaca API.</p>
                         </div>
-                    )}
-
-                    <div class="flex items-center justify-between mb-6">
-                        <h1 class="text-lg font-semibold">Asset Universe</h1>
-                        <button
-                            onClick={() => setShowForm(!showForm)}
-                            class="text-sm bg-blue-600 text-white px-4 py-1.5 rounded-lg hover:bg-blue-700"
-                        >
-                            + Add Asset
-                        </button>
+                        <Button icon="refresh-cw" onClick={reload}>Refresh</Button>
                     </div>
 
-                    {showForm && (
-                        <div class="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-                            <div class="text-sm font-medium text-gray-600 mb-3">Add New Asset</div>
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                <input
-                                    class="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                                    placeholder="Symbol (e.g. XRP)"
-                                    value={newAsset.symbol}
-                                    onChange={e => setNewAsset({ ...newAsset, symbol: e.target.value.toUpperCase() })}
-                                />
-                                <input
-                                    class="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                                    placeholder="Display name (optional)"
-                                    value={newAsset.name}
-                                    onChange={e => setNewAsset({ ...newAsset, name: e.target.value })}
-                                />
-                                <select
-                                    class="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                                    value={newAsset.asset_type}
-                                    onChange={e => setNewAsset({ ...newAsset, asset_type: e.target.value })}
-                                >
-                                    <option value="crypto">Crypto</option>
-                                    <option value="stock">Stock</option>
-                                </select>
-                                <input
-                                    class="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                                    placeholder="CoinGecko ID (crypto only)"
-                                    value={newAsset.coingecko_id}
-                                    onChange={e => setNewAsset({ ...newAsset, coingecko_id: e.target.value })}
-                                />
-                            </div>
-                            <div class="flex gap-2 mt-3">
-                                <button
-                                    onClick={addNewAsset}
-                                    class="text-sm bg-blue-600 text-white px-4 py-1.5 rounded-lg hover:bg-blue-700"
-                                >
-                                    Add to Universe
-                                </button>
-                                <button
-                                    onClick={() => setShowForm(false)}
-                                    class="text-sm text-gray-500 border border-gray-200 px-4 py-1.5 rounded-lg hover:bg-gray-50"
-                                >
-                                    Cancel
-                                </button>
-                            </div>
+                    {a.status === "error" ? (
+                        <Card><div className="text-red-400">{a.error || "Could not connect to Alpaca."}</div></Card>
+                    ) : (
+                        <div className="grid gap-4 md:grid-cols-4">
+                            <Metric label="Equity" value={money(a.equity ?? a.portfolio_value)} tone="blue" />
+                            <Metric label="Cash" value={money(a.cash)} />
+                            <Metric label="Buying Power" value={money(a.buying_power)} />
                         </div>
                     )}
 
-                    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                        <table class="w-full text-sm">
-                            <thead class="bg-gray-50 text-xs text-gray-400 uppercase">
-                                <tr>
-                                    {["Symbol", "Type", "Watchlist", "Actions"].map(h => (
-                                        <th key={h} class="px-4 py-3 text-left font-medium">{h}</th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-50">
-                                {assets.map((a, i) => (
-                                    <tr key={a.symbol || i} class="hover:bg-gray-50">
-                                        <td class="px-4 py-3 font-medium">
-                                            <span title={a.name ? String(a.name) : a.symbol}>{a.symbol}</span>
-                                        </td>
-                                        <td class="px-4 py-3"><Badge text={a.asset_type} type={a.asset_type} /></td>
-                                        <td class="px-4 py-3">
-                                            <button
-                                                onClick={() => toggleWatchlist(a.symbol, a.in_watchlist)}
-                                                disabled={adding === a.symbol}
-                                                className={`text-xs px-3 py-1 rounded-lg border transition-colors disabled:opacity-50
-                      ${a.in_watchlist
-                                                        ? "border-green-200 text-green-600 hover:bg-red-50 hover:text-red-500 hover:border-red-200"
-                                                        : "border-gray-200 text-gray-500 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200"
-                                                    }`}
-                                            >
-                                                {adding === a.symbol ? "..." : a.in_watchlist ? "✓ Watching" : "+ Watch"}
-                                            </button>
-                                        </td>
-                                        <td class="px-4 py-3">
-                                            <div class="flex flex-wrap gap-1.5">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => openEdit(a)}
-                                                    class="text-xs text-blue-600 border border-blue-200 px-2 py-1 rounded hover:bg-blue-50"
-                                                >
-                                                    Edit
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => removeAsset(a.symbol)}
-                                                    disabled={deleting === a.symbol}
-                                                    class="text-xs text-red-600 border border-red-200 px-2 py-1 rounded hover:bg-red-50 disabled:opacity-50"
-                                                >
-                                                    {deleting === a.symbol ? "…" : "Delete"}
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                    <Card title="Broker Open Positions" eyebrow="Alpaca Account">
+                        <Table
+                            rows={pos}
+                            emptyTitle="No open positions on Alpaca"
+                            columns={[
+                                { key: "symbol", label: "Symbol", render: r => <span className="font-semibold text-white">{r.symbol}</span> },
+                                { key: "side", label: "Side", render: r => <Badge tone={String(r.side).toLowerCase() === "long" ? "green" : "red"}>{r.side}</Badge> },
+                                { key: "qty", label: "Qty", render: r => num(r.qty, 0, 6) },
+                                { key: "cost", label: "Avg Cost", render: r => money(r.avg_cost) },
+                                { key: "market", label: "Market Val", render: r => money(r.market_value) },
+                                { key: "upl", label: "Unrealized P/L", render: r => <span className={Number(r.unrealized_pl) >= 0 ? "text-emerald-400" : "text-red-400"}>{money(r.unrealized_pl)} ({pct(r.unrealized_plpc)})</span> },
+                                { key: "actions", label: "", render: r => <Button tone="danger" className="text-xs px-2 py-1" onClick={() => closeAlpacaPosition(r.symbol)}>Close</Button> }
+                            ]}
+                        />
+                    </Card>
+                </div>
+            );
+        }
+
+        function LogsPage() {
+            const [logs, setLogs] = useState([]);
+            const endRef = useRef(null);
+
+            useEffect(() => {
+                const evtSource = new EventSource(`${API}/api/logs/stream`);
+                evtSource.onmessage = (event) => {
+                    setLogs(prev => [...prev, event.data].slice(-200)); // keep last 200 lines
+                };
+                evtSource.onerror = () => {
+                    evtSource.close();
+                };
+                return () => evtSource.close();
+            }, []);
+
+            useEffect(() => {
+                if (endRef.current) {
+                    const container = endRef.current.parentElement;
+                    container.scrollTop = container.scrollHeight;
+                }
+            }, [logs]);
+
+            useLucide();
+
+            return (
+                <div className="h-full flex flex-col space-y-4 fade-in">
+                    <div>
+                        <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
+                            Live Terminal <i data-lucide="terminal" className="text-primary" style={{width:20}}></i>
+                        </h1>
+                        <p className="text-sm text-slate-400 mt-1">Real-time pipeline execution logs streaming via SSE.</p>
+                    </div>
+                    
+                    <div className="flex-1 min-h-[500px] bg-[#090e17] rounded-xl border border-panelBorder p-4 font-mono text-xs md:text-sm overflow-y-auto term-scroll shadow-glass relative">
+                        {logs.length === 0 && <div className="text-slate-500 italic">Connecting to log stream...</div>}
+                        {logs.map((line, i) => {
+                            // Syntax highlighting hack for logs
+                            let color = "text-slate-300";
+                            if (line.includes("[INFO]")) color = "text-blue-400";
+                            if (line.includes("[ERROR]")) color = "text-red-400";
+                            if (line.includes("[WARNING]")) color = "text-amber-400";
+                            return <div key={i} className={classNames("whitespace-pre-wrap leading-relaxed", color)}>{line}</div>;
+                        })}
+                        <div ref={endRef} />
+                        <div className="sticky bottom-0 right-0 float-right p-2 opacity-50 hover:opacity-100 transition-opacity">
+                            <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.8)]"></div>
+                        </div>
                     </div>
                 </div>
             );
         }
 
-        // ── App ────────────────────────────────────────────────────
+        function SettingsPage() {
+            const { data, loading, error, reload } = useAsyncData(() => fetchApi("/api/settings"), []);
+            const [form, setForm] = useState(null);
+            const [saving, setSaving] = useState(false);
 
-        function App() {
-            const [page, setPage] = useState("dashboard");
-            const [timeZone, setTimeZone] = useState(readStoredTimeZone);
+            useEffect(() => {
+                if (data && !form) setForm(data);
+            }, [data]);
 
-            const persistTimeZone = (tz) => {
-                setTimeZone(tz);
-                writeStoredTimeZone(tz);
+            useLucide();
+
+            const save = async () => {
+                setSaving(true);
+                try {
+                    await postApi("/api/settings", {
+                        portfolio_balance: Number(form.portfolio_balance),
+                        stop_loss_pct: Number(form.stop_loss_pct),
+                        take_profit_pct: Number(form.take_profit_pct),
+                        max_positions: Number(form.max_positions),
+                        confidence_threshold: Number(form.confidence_threshold),
+                        scan_interval_minutes: Number(form.scan_interval_minutes),
+                        alpaca_trade_size: Number(form.alpaca_trade_size),
+                    });
+                    alert("Settings saved successfully.");
+                } catch(e) {
+                    alert(e.message);
+                } finally {
+                    setSaving(false);
+                }
             };
 
-            const pages = {
-                dashboard: <DashboardPage timeZone={timeZone} />,
-                positions: <PositionsPage timeZone={timeZone} />,
-                trades: <TradesPage timeZone={timeZone} />,
-                watchlist: <WatchlistPage timeZone={timeZone} />,
-                universe: <UniversePage />,
-            };
+            if (loading || !form) return <Loading />;
+            if (error) return <div className="text-red-400">Error: {error}</div>;
 
             return (
-                <div class="min-h-screen bg-gray-50">
-                    <Navbar page={page} setPage={setPage} timeZone={timeZone} onTimeZoneChange={persistTimeZone} />
-                    <main class="max-w-6xl mx-auto">
-                        {pages[page]}
+                <div className="max-w-2xl space-y-6 fade-in">
+                    <div>
+                        <h1 className="text-2xl font-bold text-white tracking-tight">System Settings</h1>
+                        <p className="text-sm text-slate-400 mt-1">Configure trading parameters without redeploying. Settings take effect on the next pipeline run.</p>
+                    </div>
+
+                    <Card title="Risk & Portfolio">
+                        <div className="grid grid-cols-2 gap-4">
+                            <Field label="Portfolio Balance ($)" type="number" value={form.portfolio_balance} onChange={v => setForm({...form, portfolio_balance: v})} />
+                            <Field label="Max Open Positions" type="number" value={form.max_positions} onChange={v => setForm({...form, max_positions: v})} />
+                            <Field label="Stop Loss (%)" type="number" value={form.stop_loss_pct} onChange={v => setForm({...form, stop_loss_pct: v})} />
+                            <Field label="Take Profit (%)" type="number" value={form.take_profit_pct} onChange={v => setForm({...form, take_profit_pct: v})} />
+                        </div>
+                    </Card>
+
+                    <Card title="Agent Thresholds">
+                        <div className="grid grid-cols-2 gap-4">
+                            <Field label="Min Confidence Score (0-100)" type="number" value={form.confidence_threshold} onChange={v => setForm({...form, confidence_threshold: v})} />
+                            <Field label="Scan Interval (Minutes)" type="number" value={form.scan_interval_minutes} onChange={v => setForm({...form, scan_interval_minutes: v})} />
+                            <Field label="Alpaca Trade Size ($)" type="number" value={form.alpaca_trade_size} onChange={v => setForm({...form, alpaca_trade_size: v})} />
+                        </div>
+                    </Card>
+
+                    <div className="flex justify-end pt-4">
+                        <Button tone="primary" icon="save" onClick={save} disabled={saving}>{saving ? "Saving..." : "Save Configuration"}</Button>
+                    </div>
+                </div>
+            );
+        }
+
+        function AdvisorPage() {
+            useLucide();
+            return (
+                <div className="h-full flex flex-col fade-in">
+                    <div>
+                        <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
+                            AI Advisor <Badge tone="blue">Coming Soon</Badge>
+                        </h1>
+                        <p className="text-sm text-slate-400 mt-1">Interact with your trading agents to understand their decisions.</p>
+                    </div>
+
+                    <div className="flex-1 mt-6 rounded-xl border border-dashed border-panelBorder bg-slate-900/30 flex flex-col items-center justify-center text-center p-10">
+                        <div className="w-16 h-16 rounded-full bg-blue-900/40 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(59,130,246,0.3)]">
+                            <i data-lucide="bot" className="text-primary" style={{width:32, height:32}}></i>
+                        </div>
+                        <h3 className="text-lg font-semibold text-white mb-2">Agent Chat Interface</h3>
+                        <p className="text-slate-400 max-w-md">
+                            Soon, you will be able to ask your agents questions like "Why did BTC get a HOLD signal?" or "Summarize yesterday's market action."
+                        </p>
+                        <div className="mt-8 flex gap-3 opacity-50 cursor-not-allowed">
+                            <input disabled type="text" placeholder="Message the advisor..." className="w-64 rounded bg-slate-800 border border-slate-700 px-4 py-2 text-sm" />
+                            <Button tone="primary" disabled icon="send">Send</Button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- Main Layout ---
+        function App() {
+            const [page, setPage] = useState("overview");
+            const { data: stateData, reload: reloadState } = useAsyncData(() => fetchApi("/api/trading/state"), [], 10000);
+            const scrollRef = useRef(null);
+
+            useEffect(() => {
+                if (scrollRef.current) {
+                    scrollRef.current.scrollTop = 0;
+                }
+            }, [page]);
+            const [triggering, setTriggering] = useState(false);
+            const isPaused = stateData?.is_paused || false;
+
+            useLucide();
+
+            const togglePause = async () => {
+                try {
+                    await postApi("/api/trading/state", { is_paused: !isPaused });
+                    reloadState();
+                } catch(e) {
+                    alert("Failed to toggle state: " + e.message);
+                }
+            };
+
+            const triggerRun = async () => {
+                setTriggering(true);
+                try {
+                    await postApi("/api/trading/trigger");
+                    alert("Pipeline triggered successfully! Check the Live Terminal for logs.");
+                } catch(e) {
+                    alert("Failed to trigger: " + e.message);
+                } finally {
+                    setTriggering(false);
+                }
+            };
+
+            const navItems = [
+                { id: "overview", label: "Overview", icon: "layout-dashboard" },
+                { id: "simulator", label: "Simulator", icon: "wallet" },
+                { id: "alpaca", label: "Alpaca Broker", icon: "bar-chart-2" },
+                { id: "watchlist", label: "Watchlist", icon: "list" },
+                { id: "backtest", label: "Backtesting", icon: "line-chart" },
+                { id: "logs", label: "Live Terminal", icon: "terminal" },
+                { id: "settings", label: "Settings", icon: "settings" },
+                { id: "advisor", label: "AI Advisor", icon: "bot" },
+            ];
+
+            return (
+                <div className="flex h-screen overflow-hidden bg-slate-950 font-sans">
+                    
+                    {/* Sidebar */}
+                    <aside className="w-64 border-r border-slate-800 bg-slate-900/50 flex flex-col">
+                        <div className="h-16 flex items-center px-6 border-b border-slate-800">
+                            <div className="w-8 h-8 rounded bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mr-3 shadow-[0_0_15px_rgba(59,130,246,0.5)]">
+                                <i data-lucide="activity" className="text-white" style={{width:18, height:18}}></i>
+                            </div>
+                            <span className="font-bold text-white tracking-tight">TradeAssist AI</span>
+                        </div>
+
+                        <nav className="flex-1 py-6 px-3 space-y-1">
+                            {navItems.map(item => (
+                                <button
+                                    key={item.id}
+                                    onClick={() => setPage(item.id)}
+                                    className={classNames(
+                                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
+                                        page === item.id 
+                                            ? "bg-primary/10 text-primary" 
+                                            : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
+                                    )}
+                                >
+                                    <i data-lucide={item.icon} style={{width: 18, height: 18}}></i>
+                                    {item.label}
+                                </button>
+                            ))}
+                        </nav>
+                        
+                        {/* 
+                        <div className="p-4 border-t border-slate-800">
+                            <div className="rounded-lg bg-slate-800/50 p-4 shadow-inner">
+                                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">System Status</div>
+                                <div className="flex items-center justify-between mb-4">
+                                    <span className="text-sm text-slate-300">Trading</span>
+                                    <Badge tone={isPaused ? "amber" : "green"}>{isPaused ? "Paused" : "Active"}</Badge>
+                                </div>
+                                <div className="space-y-2">
+                                    <Button 
+                                        tone={isPaused ? "success" : "amber"} 
+                                        icon={isPaused ? "play" : "pause"} 
+                                        className="w-full text-xs"
+                                        onClick={togglePause}
+                                    >
+                                        {isPaused ? "Resume Trading" : "Pause Trading"}
+                                    </Button>
+                                    <Button 
+                                        tone="primary" 
+                                        icon="zap" 
+                                        className="w-full text-xs"
+                                        onClick={triggerRun}
+                                        disabled={triggering}
+                                    >
+                                        Run Now
+                                    </Button>
+                                </div>
+                            </div>
+                        </div> 
+                        */}
+                    </aside>
+
+                    {/* Main Content */}
+                    <main className="flex-1 relative overflow-hidden bg-gradient-to-br from-slate-950 to-slate-900">
+                        {/* Decorative background glow */}
+                        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-blue-600/10 blur-[120px] pointer-events-none"></div>
+                        <div className="absolute bottom-[-20%] right-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-600/10 blur-[120px] pointer-events-none"></div>
+
+                        <div ref={scrollRef} className="absolute inset-0 overflow-y-auto p-4 md:p-8 pb-32 z-10">
+                            {page === "overview" && <OverviewPage />}
+                            {page === "simulator" && <SimulatorPage />}
+                            {page === "alpaca" && <AlpacaPage />}
+                            {page === "watchlist" && <WatchlistPage />}
+                            {page === "backtest" && <BacktestingPage />}
+                            {page === "logs" && <LogsPage />}
+                            {page === "settings" && <SettingsPage />}
+                            {page === "advisor" && <AdvisorPage />}
+                        </div>
                     </main>
                 </div>
             );
         }
 
-        ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+        const root = ReactDOM.createRoot(document.getElementById("root"));
+        root.render(<App />);
     </script>
+    <style>
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
 </body>
-
 </html>

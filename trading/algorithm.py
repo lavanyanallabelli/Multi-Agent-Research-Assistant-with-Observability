@@ -2,13 +2,8 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from config import (
-    PAPER_TRADING_BALANCE,
-    PAPER_TRADING_RISK_PCT,
-    PAPER_TRADING_MAX_POSITIONS,
-    PAPER_TRADING_STOP_LOSS_PCT,
-    PAPER_TRADING_TP_PCT,
-)
+from config import PAPER_TRADING_RISK_PCT
+from memory.audit_log import get_system_settings
 from trading.portfolio import (
     get_portfolio,
     count_open_positions,
@@ -31,7 +26,7 @@ def calculate_position_size(
         Quantity = $6,666 / entry_price
     """
     risk_amount   = cash_balance * (PAPER_TRADING_RISK_PCT / 100)
-    stop_loss_pct = PAPER_TRADING_STOP_LOSS_PCT / 100
+    stop_loss_pct = get_system_settings().get('stop_loss_pct', 3.0) / 100
     position_size = risk_amount / stop_loss_pct
 
     # never use more than 30% of cash in one trade
@@ -62,8 +57,8 @@ def calculate_exit_levels(
         stop_loss   = entry + 3%
         take_profit = entry - 6%
     """
-    sl_pct = PAPER_TRADING_STOP_LOSS_PCT / 100
-    tp_pct = PAPER_TRADING_TP_PCT / 100
+    sl_pct = get_system_settings().get('stop_loss_pct', 3.0) / 100
+    tp_pct = get_system_settings().get('take_profit_pct', 6.0) / 100
 
     if direction == "LONG":
         stop_loss   = entry_price * (1 - sl_pct)
@@ -92,8 +87,8 @@ def should_open_trade(
 
     # check 1 — max positions
     open_count = count_open_positions()
-    if open_count >= PAPER_TRADING_MAX_POSITIONS:
-        return False, f"Max positions reached ({open_count}/{PAPER_TRADING_MAX_POSITIONS})"
+    if open_count >= get_system_settings().get('max_positions', 3):
+        return False, f"Max positions reached ({open_count}/{get_system_settings().get('max_positions', 3)})"
 
     # check 2 — already have position in this asset
     existing = get_open_position_for(symbol)

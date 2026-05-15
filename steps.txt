@@ -167,3 +167,22 @@ PHASE 9 — Production
 ⬜ Step 31: Deploy to Railway
 ⬜ Step 32: Health monitoring
 
+
+V3
+1. Alpaca auto execution agent
+2. Backtesting to the dashboard
+
+ Every 2 weeks     — run backtest on current watchlist
+                    check if accuracy is holding up
+
+When you add      — immediately backtest the new asset
+a new asset         before letting it trade live
+
+When signals      — something changed in the market
+feel wrong          run backtest to diagnose
+
+Monthly           — full review, adjust thresholds if needed
+
+3. fixed bugs- Remove auto sell before checking assest 
+4. settings page where user can manage details like total money, profit, loss 
+5. UI needs to be fixed

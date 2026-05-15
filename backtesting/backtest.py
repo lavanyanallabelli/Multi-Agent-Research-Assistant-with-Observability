@@ -30,16 +30,31 @@ def simulate_signals(candles: list[dict]) -> list[dict]:
         volume     = calculate_volume_signal(window)
         timeframe  = check_timeframe_confirmation(window)
         signal, strength = score_signal(
-            indicators, price, regime, volume, timeframe
+            indicators, float(price), regime, volume, timeframe
         )
+
+        rsi_val = indicators.get("rsi")
+        rsi_out = None
+        if rsi_val is not None:
+            try:
+                rsi_out = float(rsi_val)
+            except (TypeError, ValueError):
+                rsi_out = None
+
+        strength_out = None
+        if strength is not None:
+            try:
+                strength_out = float(strength)
+            except (TypeError, ValueError):
+                strength_out = None
 
         signals.append({
             "index":    i,
-            "price":    price,
+            "price":    float(price),
             "signal":   signal,
-            "strength": strength,
-            "rsi":      indicators.get("rsi"),
-            "regime":   regime,
+            "strength": strength_out,
+            "rsi":      rsi_out,
+            "regime":   str(regime) if regime is not None else "",
         })
 
     return signals
@@ -69,19 +84,18 @@ def evaluate_signals(
         if sig["signal"] == "HOLD":
             continue
 
-        i           = sig["index"]
-        entry_price = sig["price"]
-
+        i = sig["index"]
         if i + hold_days >= len(candles):
             continue
 
-        exit_price = candles[i + hold_days]["c"]
-        pct_change = ((exit_price - entry_price) / entry_price) * 100
+        entry_price = float(candles[i]["c"])
+        exit_price  = float(candles[i + hold_days]["c"])
+        pct_change  = ((exit_price - entry_price) / entry_price) * 100
 
         if sig["signal"] == "BUY":
-            correct = exit_price > entry_price
+            correct = bool(exit_price > entry_price)
         else:
-            correct = exit_price < entry_price
+            correct = bool(exit_price < entry_price)
 
         results["total_signals"] += 1
         results["buy_signals"]   += 1 if sig["signal"] == "BUY"  else 0
@@ -94,23 +108,38 @@ def evaluate_signals(
         else:
             losses.append(abs(pct_change))
 
+        rsi = sig.get("rsi")
+        if rsi is not None:
+            try:
+                rsi = float(rsi)
+            except (TypeError, ValueError):
+                rsi = None
+        strength = sig.get("strength")
+        if strength is not None:
+            try:
+                strength = float(strength)
+            except (TypeError, ValueError):
+                strength = None
+        regime = sig.get("regime")
+        regime = str(regime) if regime is not None else ""
+
         results["trades"].append({
-            "signal":      sig["signal"],
-            "entry_price": round(entry_price, 2),
-            "exit_price":  round(exit_price, 2),
-            "pct_change":  round(pct_change, 2),
+            "signal":      str(sig["signal"]),
+            "entry_price": float(round(entry_price, 2)),
+            "exit_price":  float(round(exit_price, 2)),
+            "pct_change":  float(round(pct_change, 2)),
             "correct":     correct,
-            "rsi":         sig.get("rsi"),
-            "regime":      sig.get("regime"),
-            "strength":    sig.get("strength"),
+            "rsi":         rsi,
+            "regime":      regime,
+            "strength":    strength,
         })
 
     if results["total_signals"] > 0:
-        results["accuracy"] = round(
+        results["accuracy"] = float(round(
             results["correct"] / results["total_signals"] * 100, 1
-        )
-    results["avg_gain"] = round(sum(gains) / len(gains), 2) if gains else 0
-    results["avg_loss"] = round(sum(losses) / len(losses), 2) if losses else 0
+        ))
+    results["avg_gain"] = float(round(sum(gains) / len(gains), 2)) if gains else 0.0
+    results["avg_loss"] = float(round(sum(losses) / len(losses), 2)) if losses else 0.0
 
     return results
 
@@ -167,15 +196,15 @@ def calculate_drawdown(trades: list[dict]) -> dict:
         }
 
     # max drawdown
-    peak        = 0
-    drawdown    = 0
-    max_drawdown = 0
     balance     = 100.0
+    peak        = 100.0
+    max_drawdown = 0.0
 
     for trade in trades:
-        balance  += trade["pct_change"] if trade["correct"] else -trade["pct_change"]
-        peak      = max(peak, balance)
-        drawdown  = (peak - balance) / peak * 100 if peak > 0 else 0
+        trade_pnl = float(trade["pct_change"]) if trade["signal"] == "BUY" else -float(trade["pct_change"])
+        balance += trade_pnl
+        peak = max(peak, balance)
+        drawdown = (peak - balance) / peak * 100 if peak > 0 else 0.0
         max_drawdown = max(max_drawdown, drawdown)
 
     # longest losing streak
@@ -192,11 +221,11 @@ def calculate_drawdown(trades: list[dict]) -> dict:
                 streaks.append(curr_streak)
             curr_streak = 0
 
-    avg_streak = round(sum(streaks) / len(streaks), 1) if streaks else 0
+    avg_streak = float(round(sum(streaks) / len(streaks), 1)) if streaks else 0.0
 
     return {
-        "max_drawdown_pct":       round(max_drawdown, 2),
-        "longest_losing_streak":  max_streak,
+        "max_drawdown_pct":       float(round(float(max_drawdown), 2)),
+        "longest_losing_streak":  int(max_streak),
         "avg_consecutive_losses": avg_streak,
     }
 
@@ -260,23 +289,54 @@ def run_walk_forward(symbol: str, coingecko_id: str) -> None:
               f"{w['avg_gain']}%{'':<5} "
               f"{w['avg_loss']}%")
 
-
 if __name__ == "__main__":
-    print("Running V2 backtests...\n")
+    from memory.watchlist import get_watchlist
+
+    print("Reading assets from watchlist...")
+    watchlist = get_watchlist()
+
+    if not watchlist:
+        print("Watchlist is empty — add assets first")
+        exit()
+
+    print(f"Found {len(watchlist)} assets in watchlist\n")
+
     all_results = {}
 
-    for asset in CRYPTO_ASSETS:
+    for asset in watchlist:
+        symbol     = asset["symbol"]
+        asset_type = asset["asset_type"]
+
+        # only backtest crypto for now — Alpha Vantage daily
+        # limit makes stock backtesting expensive on free tier
+        if asset_type == "stock":
+            print(f"Skipping {symbol} (stock) — use Alpha Vantage premium for stock backtesting")
+            continue
+
+        coingecko_id = asset.get("coingecko_id")
+        if not coingecko_id:
+            print(f"Skipping {symbol} — no coingecko_id")
+            continue
+
         result = run_backtest(
-            symbol=asset["symbol"],
-            coingecko_id=asset["coingecko_id"],
+            symbol=symbol,
+            coingecko_id=coingecko_id,
             days=90,
             hold_days=3,
         )
-        all_results[asset["symbol"]] = result
+        all_results[symbol] = result
+
+    if not all_results:
+        print("No results — add crypto assets to watchlist")
+        exit()
 
     print("\n\nWalk-forward analysis:")
-    for asset in CRYPTO_ASSETS[:2]:
-        run_walk_forward(asset["symbol"], asset["coingecko_id"])
+    for asset in watchlist:
+        if asset["asset_type"] != "crypto":
+            continue
+        coingecko_id = asset.get("coingecko_id")
+        if coingecko_id:
+            run_walk_forward(asset["symbol"], coingecko_id)
 
     print("\n\nSummary:")
     print(f"{'Symbol':<8} {'Signals':<10} {'Accuracy':<12} {'Max DD':<10} {'Longest Loss Run'}")
@@ -287,3 +347,4 @@ if __name__ == "__main__":
                   f"{result['accuracy']}%{'':<7} "
                   f"{result.get('max_drawdown_pct', 0)}%{'':<5} "
                   f"{result.get('longest_losing_streak', 0)} trades")
+

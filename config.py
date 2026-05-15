@@ -42,7 +42,7 @@ OPENAI_MODEL = "gpt-4o-mini"
 MAX_TOKENS   = 1000
 
 # Paper Trading
-PAPER_TRADING_BALANCE      = 10000.0  # starting virtual balance
+PAPER_TRADING_BALANCE      = 2000.0  # starting virtual balance
 PAPER_TRADING_RISK_PCT     = 2.0      # risk % per trade
 PAPER_TRADING_MAX_POSITIONS = 3       # max open trades at once
 PAPER_TRADING_STOP_LOSS_PCT = 3.0     # stop loss % below entry

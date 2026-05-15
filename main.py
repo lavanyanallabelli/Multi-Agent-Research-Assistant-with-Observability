@@ -4,6 +4,8 @@ import time
 import schedule
 import logging
 from datetime import datetime
+
+from memory.audit_log import get_trading_state, get_system_settings
 from scripts.daily_report import generate_daily_report
 from tools.telegram import send_message as telegram_send
 sys.path.insert(0, os.path.dirname(__file__))
@@ -23,6 +25,10 @@ log = logging.getLogger(__name__)
 
 
 def job():
+    state = get_trading_state()
+    if state.get("is_paused"):
+        log.info("Trading is manually paused. Skipping pipeline run.")
+        return
     log.info("Pipeline triggered")
     try:
         final = run_pipeline()
@@ -42,14 +48,14 @@ def run_once():
 
 def run_scheduler(interval_minutes: int = 15):
     """Run the pipeline on a schedule forever."""
-    log.info(f"Scheduler started — running every {interval_minutes} minutes")
+    log.info(f"Scheduler started")
     log.info("Press Ctrl+C to stop\n")
 
     # run immediately on start
     job()
 
-    # schedule recurring runs
-    schedule.every(interval_minutes).minutes.do(job)
+    current_interval = get_system_settings().get("scan_interval_minutes", interval_minutes)
+    schedule.every(current_interval).minutes.do(job)
 
     # daily report every morning at 8am UTC
     schedule.every().day.at("08:00").do(
@@ -57,6 +63,17 @@ def run_scheduler(interval_minutes: int = 15):
     )
 
     while True:
+        # Check if interval changed
+        new_interval = get_system_settings().get("scan_interval_minutes", current_interval)
+        if new_interval != current_interval:
+            log.info(f"Scan interval changed from {current_interval} to {new_interval} minutes. Rescheduling.")
+            schedule.clear()
+            current_interval = new_interval
+            schedule.every(current_interval).minutes.do(job)
+            schedule.every().day.at("08:00").do(
+                lambda: telegram_send(generate_daily_report())
+            )
+
         schedule.run_pending()
         next_run = schedule.next_run()
         if next_run:
@@ -64,7 +81,7 @@ def run_scheduler(interval_minutes: int = 15):
             minutes = int(delta.total_seconds() // 60)
             seconds = int(delta.total_seconds() % 60)
             print(f"\nNext run in {minutes}m {seconds}s — waiting...", end="\r")
-        time.sleep(30)
+        time.sleep(5)
 
 
 if __name__ == "__main__":

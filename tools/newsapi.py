@@ -50,10 +50,9 @@ def get_headlines(symbol: str, asset_type: str = "unknown", max_articles: int = 
         if title:
             headlines.append(f"{title}. {desc}" if desc else title)
 
-     _cache[symbol] = {
-        "headlines":  headlines,
+    _cache[symbol] = {
+        "headlines": headlines,
         "fetched_at": datetime.utcnow(),
     }
     print(f"  [NewsAPI] {symbol}: fetched {len(headlines)} headlines, cached for {CACHE_MINUTES}min")
     return headlines
-    

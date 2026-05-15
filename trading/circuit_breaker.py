@@ -5,7 +5,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from trading.portfolio import get_portfolio, get_recent_trades
 from tools.telegram import send_message
-from config import CIRCUIT_BREAKER_PCT, PAPER_TRADING_BALANCE
+from config import CIRCUIT_BREAKER_PCT
+from memory.audit_log import get_system_settings
 
 
 def check_circuit_breaker() -> tuple[bool, str]:
@@ -50,7 +51,7 @@ def check_circuit_breaker() -> tuple[bool, str]:
     ]
     if week_trades:
         week_pnl     = sum(t["pnl"] for t in week_trades)
-        week_pnl_pct = (week_pnl / PAPER_TRADING_BALANCE) * 100
+        week_pnl_pct = (week_pnl / get_system_settings().get('portfolio_balance', 2000.0)) * 100
         if week_pnl_pct <= -10.0:
             reason = (f"Weekly loss {week_pnl_pct:.1f}% "
                       f"exceeded -10% limit")

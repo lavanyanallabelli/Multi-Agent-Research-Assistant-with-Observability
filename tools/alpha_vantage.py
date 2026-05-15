@@ -7,32 +7,41 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import yfinance as yf
 
 def get_quote(symbol: str) -> dict:
-    ticker = yf.Ticker(symbol)
-    info   = ticker.fast_info
-    price  = info.last_price or 0
-    prev   = info.previous_close or price
-    change = ((price - prev) / prev * 100) if prev else 0
-    return {
-        "price_usd":        round(price, 4),
-        "volume_24h":       info.last_volume or 0,
-        "price_change_24h": round(change, 2),
-    }
+    try:
+        ticker = yf.Ticker(symbol)
+        info   = ticker.fast_info
+        price  = info.last_price or 0
+        prev   = info.previous_close or price
+        change = ((price - prev) / prev * 100) if prev else 0
+        return {
+            "price_usd":        round(price, 4),
+            "volume_24h":       info.last_volume or 0,
+            "price_change_24h": round(change, 2),
+        }
+    except Exception as e:
+        raise Exception(f"[yfinance] Failed to fetch quote for {symbol}: {e}")
+
 
 
 def get_ohlcv(symbol: str) -> list[dict]:
-    ticker  = yf.Ticker(symbol)
-    hist    = ticker.history(period="90d", interval="1d")
-    candles = []
-    for date, row in hist.iterrows():
-        candles.append({
-            "t": str(date.date()),
-            "o": round(row["Open"], 4),
-            "h": round(row["High"], 4),
-            "l": round(row["Low"], 4),
-            "c": round(row["Close"], 4),
-            "v": row["Volume"],
-        })
-    return candles
+    try:
+        ticker  = yf.Ticker(symbol)
+        hist    = ticker.history(period="90d", interval="1d")
+        if hist.empty:
+            raise Exception(f"[yfinance] No OHLCV data for {symbol}")
+        candles = []
+        for date, row in hist.iterrows():
+            candles.append({
+                "t": str(date.date()),
+                "o": round(row["Open"], 4),
+                "h": round(row["High"], 4),
+                "l": round(row["Low"], 4),
+                "c": round(row["Close"], 4),
+                "v": row["Volume"],
+            })
+        return candles
+    except Exception as e:
+        raise Exception(f"[yfinance] Failed to fetch OHLCV for {symbol}: {e}")
 
 
 def get_full_asset_data(symbol: str) -> dict:

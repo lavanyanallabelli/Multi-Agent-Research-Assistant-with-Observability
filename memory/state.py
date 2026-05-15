@@ -105,6 +105,8 @@ def initial_state(run_id: str) -> dict:
         "alert_sent":         False,
         "errors":             [],
         "token_usage":        {},
+        "paper_trade_opened": False,
+        "execution_result":   None,
     }
 # def initial_state(run_id: str) -> PipelineState:
     # """Returns a clean state for every new pipeline run."""

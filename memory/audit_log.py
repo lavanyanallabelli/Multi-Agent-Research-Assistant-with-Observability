@@ -123,6 +123,49 @@ class Trade(Base):
     fees           = Column(Float, default=0.0)
 
 
+class BrokerAccountSnapshot(Base):
+    __tablename__ = "broker_account_snapshots"
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    broker          = Column(String, default="alpaca")
+    captured_at     = Column(DateTime, default=datetime.utcnow)
+    mode            = Column(String)  # "paper" or "live"
+    status          = Column(String)
+    cash            = Column(Float, nullable=True)
+    buying_power    = Column(Float, nullable=True)
+    portfolio_value = Column(Float, nullable=True)
+    equity          = Column(Float, nullable=True)
+    error           = Column(Text, nullable=True)
+
+
+class BrokerPositionSnapshot(Base):
+    __tablename__ = "broker_position_snapshots"
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    broker         = Column(String, default="alpaca")
+    captured_at    = Column(DateTime, default=datetime.utcnow)
+    mode           = Column(String)  # "paper" or "live"
+    status         = Column(String)
+    positions_json = Column(Text, default="[]")
+    error          = Column(Text, nullable=True)
+
+
+class SystemSettings(Base):
+    __tablename__ = "system_settings"
+    id                    = Column(Integer, primary_key=True)
+    portfolio_balance     = Column(Float, default=2000.0)
+    stop_loss_pct         = Column(Float, default=3.0)
+    take_profit_pct       = Column(Float, default=6.0)
+    max_positions         = Column(Integer, default=3)
+    confidence_threshold  = Column(Integer, default=60)
+    scan_interval_minutes = Column(Integer, default=15)
+    alpaca_trade_size     = Column(Float, default=1000.0)
+
+
+class TradingState(Base):
+    __tablename__ = "trading_state"
+    id        = Column(Integer, primary_key=True)
+    is_paused = Column(Boolean, default=False)
+
+
 engine = create_engine(DATABASE_URL, echo=False)
 Base.metadata.create_all(engine)
 
@@ -182,11 +225,43 @@ def seed_portfolio():
         print(f"[DB] Portfolio created with ${PAPER_TRADING_BALANCE:,.2f}")
 
 
+def seed_settings():
+    """Create default system settings on first run."""
+    from config import PAPER_TRADING_BALANCE, PAPER_TRADING_STOP_LOSS_PCT, PAPER_TRADING_TP_PCT, PAPER_TRADING_MAX_POSITIONS, MIN_CONFIDENCE_SCORE, SCAN_INTERVAL_MINUTES, ALPACA_TRADE_SIZE
+    with Session(engine) as session:
+        existing = session.query(SystemSettings).count()
+        if existing > 0:
+            return
+        session.add(SystemSettings(
+            id=1,
+            portfolio_balance=PAPER_TRADING_BALANCE,
+            stop_loss_pct=PAPER_TRADING_STOP_LOSS_PCT,
+            take_profit_pct=PAPER_TRADING_TP_PCT,
+            max_positions=PAPER_TRADING_MAX_POSITIONS,
+            confidence_threshold=MIN_CONFIDENCE_SCORE,
+            scan_interval_minutes=SCAN_INTERVAL_MINUTES,
+            alpaca_trade_size=ALPACA_TRADE_SIZE
+        ))
+        session.commit()
+        print('[DB] Default system settings created')
+
+def seed_trading_state():
+    """Create default trading state on first run."""
+    with Session(engine) as session:
+        existing = session.query(TradingState).count()
+        if existing > 0:
+            return
+        session.add(TradingState(id=1, is_paused=False))
+        session.commit()
+        print('[DB] Default trading state created')
+
 def initialize_db():
     """Call once at startup — seeds all tables if empty."""
     seed_assets_universe()
     seed_watchlist()
     seed_portfolio()
+    seed_settings()
+    seed_trading_state()
 
 
 # ── Query functions ────────────────────────────────────────────────────────────
@@ -309,6 +384,7 @@ def get_portfolio() -> dict:
             if p.total_trades > 0 else 0
         )
         return {
+            "source":         "simulator",
             "cash_balance":   round(p.cash_balance, 2),
             "total_value":    round(p.total_value, 2),
             "total_pnl":      round(p.total_pnl, 2),
@@ -319,6 +395,61 @@ def get_portfolio() -> dict:
             "losing_trades":  p.losing_trades,
             "win_rate":       win_rate,
         }
+
+
+def log_broker_snapshot(
+    broker: str,
+    account: dict,
+    positions_result: dict | None = None,
+) -> None:
+    """Store a read-only broker snapshot separately from simulator tables."""
+    mode = "paper" if account.get("paper", True) else "live"
+    with Session(engine) as session:
+        session.add(BrokerAccountSnapshot(
+            broker=broker,
+            mode=mode,
+            status=account.get("status", "unknown"),
+            cash=account.get("cash"),
+            buying_power=account.get("buying_power"),
+            portfolio_value=account.get("portfolio_value"),
+            equity=account.get("equity"),
+            error=account.get("error"),
+        ))
+        if positions_result is not None:
+            session.add(BrokerPositionSnapshot(
+                broker=broker,
+                mode=mode,
+                status=positions_result.get("status", "unknown"),
+                positions_json=json.dumps(positions_result.get("positions", [])),
+                error=positions_result.get("error"),
+            ))
+        session.commit()
+
+
+def get_recent_broker_snapshots(
+    broker: str = "alpaca",
+    limit: int = 10,
+) -> list[dict]:
+    with Session(engine) as session:
+        snapshots = session.query(BrokerAccountSnapshot)\
+            .filter(BrokerAccountSnapshot.broker == broker)\
+            .order_by(BrokerAccountSnapshot.captured_at.desc())\
+            .limit(limit).all()
+        return [
+            {
+                "id":              s.id,
+                "broker":          s.broker,
+                "captured_at":     str(s.captured_at),
+                "mode":            s.mode,
+                "status":          s.status,
+                "cash":            s.cash,
+                "buying_power":    s.buying_power,
+                "portfolio_value": s.portfolio_value,
+                "equity":          s.equity,
+                "error":           s.error,
+            }
+            for s in snapshots
+        ]
 
 
 def total_alerts_today() -> int:
@@ -336,3 +467,46 @@ def last_alert_for(symbol: str) -> datetime | None:
             AlertLog.symbol == symbol
         ).order_by(AlertLog.sent_at.desc()).first()
         return row.sent_at if row else None
+
+
+def get_system_settings() -> dict:
+    with Session(engine) as session:
+        settings = session.query(SystemSettings).filter_by(id=1).first()
+        if not settings:
+            return {}
+        return {
+            "portfolio_balance": settings.portfolio_balance,
+            "stop_loss_pct": settings.stop_loss_pct,
+            "take_profit_pct": settings.take_profit_pct,
+            "max_positions": settings.max_positions,
+            "confidence_threshold": settings.confidence_threshold,
+            "scan_interval_minutes": settings.scan_interval_minutes,
+            "alpaca_trade_size": settings.alpaca_trade_size,
+        }
+
+def update_system_settings(data: dict) -> None:
+    with Session(engine) as session:
+        settings = session.query(SystemSettings).filter_by(id=1).first()
+        if not settings:
+            settings = SystemSettings(id=1)
+            session.add(settings)
+        for key, value in data.items():
+            if hasattr(settings, key) and key != "id":
+                setattr(settings, key, value)
+        session.commit()
+
+def get_trading_state() -> dict:
+    with Session(engine) as session:
+        state = session.query(TradingState).filter_by(id=1).first()
+        if not state:
+            return {"is_paused": False}
+        return {"is_paused": state.is_paused}
+
+def update_trading_state(is_paused: bool) -> None:
+    with Session(engine) as session:
+        state = session.query(TradingState).filter_by(id=1).first()
+        if not state:
+            state = TradingState(id=1)
+            session.add(state)
+        state.is_paused = is_paused
+        session.commit()
