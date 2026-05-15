@@ -118,6 +118,22 @@
             return new Intl.DateTimeFormat("en-US", { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(d);
         }
 
+        function formatDurationMs(ms) {
+            const n = Number(ms);
+            if (!Number.isFinite(n) || n <= 0) return "—";
+            if (n >= 1000) return `${(n / 1000).toFixed(2)}s`;
+            return `${Math.round(n)}ms`;
+        }
+
+        /** Tiny USD amounts (API costs) */
+        function usdMicro(n) {
+            const x = Number(n);
+            if (!Number.isFinite(x)) return "$—";
+            if (x === 0) return "$0";
+            if (Math.abs(x) < 0.01) return `$${x.toFixed(6)}`;
+            return money(x, 4);
+        }
+
         function useAsyncData(loader, deps = [], intervalMs = null) {
             const [data, setData] = useState(null);
             const [loading, setLoading] = useState(true);
@@ -276,6 +292,273 @@
             return <div className="p-8 text-center text-slate-400 flex items-center justify-center gap-3"><i data-lucide="loader-2" className="animate-spin"></i> Loading...</div>;
         }
 
+        function mergeAgentKeys(tokenUsage, timings) {
+            const s = new Set([
+                ...Object.keys(tokenUsage || {}),
+                ...Object.keys(timings || {}),
+            ]);
+            return Array.from(s).sort();
+        }
+
+        function PipelineRunObservabilityCard({ runs, maxHeightClass = "max-h-[520px]" }) {
+            if (!runs || runs.length === 0) {
+                return (
+                    <Card title="Run cost & timing" eyebrow="Observability">
+                        <p className="text-sm text-slate-500">No pipeline runs yet.</p>
+                    </Card>
+                );
+            }
+            return (
+                <Card title="Run cost & timing" eyebrow="Observability">
+                    <p className="text-sm text-slate-400 mb-4">Per-run LLM token usage and cost, plus wall time per agent (from the in-process tracer).</p>
+                    <div className={classNames("space-y-4 overflow-y-auto term-scroll pr-1", maxHeightClass)}>
+                        {runs.map((run) => {
+                            const agents = mergeAgentKeys(run.token_usage, run.agent_timings_ms);
+                            return (
+                                <div key={`${run.id}-${run.triggered_at}`} className="rounded-lg border border-panelBorder bg-slate-900/40 p-3">
+                                    <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+                                        <span className="font-medium text-white">{formatTime(run.triggered_at)}</span>
+                                        <span className="text-slate-400">
+                                            <span className="text-slate-300">{formatDurationMs(run.total_duration_ms)}</span>
+                                            {" · "}
+                                            <span>{num(run.total_tokens, 0, 0)} tok</span>
+                                            {" · "}
+                                            <span className="text-emerald-400/90">{usdMicro(run.total_cost_usd)}</span>
+                                        </span>
+                                    </div>
+                                    {agents.length === 0 ? (
+                                        <p className="mt-2 text-xs text-slate-500">No per-agent breakdown (older run or no LLM calls this cycle).</p>
+                                    ) : (
+                                        <div className="mt-2 overflow-x-auto">
+                                            <table className="w-full min-w-[320px] text-left text-xs">
+                                                <thead>
+                                                    <tr className="border-b border-panelBorder text-slate-500">
+                                                        <th className="py-1.5 pr-2 font-medium">Agent</th>
+                                                        <th className="py-1.5 px-2 text-right font-medium">Time</th>
+                                                        <th className="py-1.5 px-2 text-right font-medium">Tokens</th>
+                                                        <th className="py-1.5 pl-2 text-right font-medium">Cost</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-panelBorder/60 text-slate-300">
+                                                    {agents.map((agent) => (
+                                                        <tr key={agent}>
+                                                            <td className="py-1.5 pr-2 font-mono text-[11px] text-slate-200">{agent}</td>
+                                                            <td className="py-1.5 px-2 text-right font-mono text-[11px]">{run.agent_timings_ms && run.agent_timings_ms[agent] != null ? formatDurationMs(run.agent_timings_ms[agent]) : "—"}</td>
+                                                            <td className="py-1.5 px-2 text-right font-mono text-[11px]">{run.token_usage && run.token_usage[agent] != null ? num(run.token_usage[agent], 0, 0) : "—"}</td>
+                                                            <td className="py-1.5 pl-2 text-right font-mono text-[11px] text-emerald-400/80">{run.cost_by_agent && run.cost_by_agent[agent] != null ? usdMicro(run.cost_by_agent[agent]) : "—"}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </Card>
+            );
+        }
+
+        function runDateKeyUtc(run, granularity) {
+            const d = parseBackendUtc(run.triggered_at);
+            if (!d || Number.isNaN(d.getTime())) return null;
+            const iso = d.toISOString();
+            return granularity === "month" ? iso.slice(0, 7) : iso.slice(0, 10);
+        }
+
+        function bucketRunsByPeriod(runs, granularity) {
+            const map = {};
+            for (const r of runs) {
+                const key = runDateKeyUtc(r, granularity);
+                if (!key) continue;
+                if (!map[key]) {
+                    map[key] = { key, runCount: 0, total_tokens: 0, total_cost: 0, total_ms: 0 };
+                }
+                const b = map[key];
+                b.runCount += 1;
+                b.total_tokens += Number(r.total_tokens) || 0;
+                b.total_cost += Number(r.total_cost_usd) || 0;
+                b.total_ms += Number(r.total_duration_ms) || 0;
+            }
+            return Object.values(map).sort((a, b) => b.key.localeCompare(a.key));
+        }
+
+        function agentAverageRows(runs) {
+            const agents = new Set();
+            for (const r of runs) {
+                mergeAgentKeys(r.token_usage, r.agent_timings_ms).forEach((a) => agents.add(a));
+            }
+            return Array.from(agents).sort().map((agent) => {
+                let tokN = 0, tokSum = 0, costN = 0, costSum = 0, msN = 0, msSum = 0;
+                for (const r of runs) {
+                    if (r.token_usage && r.token_usage[agent] != null) {
+                        tokSum += Number(r.token_usage[agent]);
+                        tokN += 1;
+                    }
+                    if (r.cost_by_agent && r.cost_by_agent[agent] != null) {
+                        costSum += Number(r.cost_by_agent[agent]);
+                        costN += 1;
+                    }
+                    if (r.agent_timings_ms && r.agent_timings_ms[agent] != null) {
+                        msSum += Number(r.agent_timings_ms[agent]);
+                        msN += 1;
+                    }
+                }
+                return {
+                    agent,
+                    avgTok: tokN ? tokSum / tokN : null,
+                    avgCost: costN ? costSum / costN : null,
+                    avgMs: msN ? msSum / msN : null,
+                };
+            });
+        }
+
+        const USAGE_VIEW_OPTIONS = [
+            { id: "each_run", label: "Each run (detail)" },
+            { id: "avg_run", label: "Average per run" },
+            { id: "per_day", label: "By calendar day (UTC)" },
+            { id: "per_month", label: "By calendar month (UTC)" },
+        ];
+
+        function UsagePage() {
+            const { data, loading, error, reload } = useAsyncData(async () => {
+                const runs = await fetchApi("/api/runs?limit=500");
+                return { runs: Array.isArray(runs) ? runs : [] };
+            }, [], 60000);
+            const [viewMode, setViewMode] = useState("each_run");
+            useLucide();
+
+            const runs = data?.runs || [];
+            const n = runs.length;
+
+            const runTotals = useMemo(() => {
+                if (!n) return { tokens: 0, cost: 0, ms: 0 };
+                return runs.reduce(
+                    (acc, r) => ({
+                        tokens: acc.tokens + (Number(r.total_tokens) || 0),
+                        cost: acc.cost + (Number(r.total_cost_usd) || 0),
+                        ms: acc.ms + (Number(r.total_duration_ms) || 0),
+                    }),
+                    { tokens: 0, cost: 0, ms: 0 }
+                );
+            }, [runs, n]);
+
+            const bucketsDay = useMemo(() => bucketRunsByPeriod(runs, "day"), [runs]);
+            const bucketsMonth = useMemo(() => bucketRunsByPeriod(runs, "month"), [runs]);
+            const agentAvgs = useMemo(() => agentAverageRows(runs), [runs]);
+
+            if (loading) return <Loading />;
+            if (error) return <div className="text-red-400">Error: {error}</div>;
+
+            return (
+                <div className="space-y-6 fade-in">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                            <h1 className="text-2xl font-bold text-white tracking-tight">Usage &amp; costs</h1>
+                            <p className="text-sm text-slate-400 mt-1">
+                                Token usage, estimated LLM cost, and agent timings. Based on up to 500 recent pipeline runs (UTC buckets for day/month). Auto-refreshes every 60s.
+                            </p>
+                        </div>
+                        <div className="flex flex-col gap-2 sm:items-end">
+                            <label className="text-xs font-medium uppercase tracking-wider text-slate-500">View</label>
+                            <select
+                                value={viewMode}
+                                onChange={(e) => setViewMode(e.target.value)}
+                                className="h-10 min-w-[220px] rounded-lg border border-panelBorder bg-slate-900/80 px-3 text-sm text-slate-200 outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                            >
+                                {USAGE_VIEW_OPTIONS.map((o) => (
+                                    <option key={o.id} value={o.id}>{o.label}</option>
+                                ))}
+                            </select>
+                            <Button icon="refresh-cw" onClick={reload} className="w-full sm:w-auto">Refresh</Button>
+                        </div>
+                    </div>
+
+                    {n === 0 ? (
+                        <Card title="No data" eyebrow="Pipeline runs">
+                            <p className="text-sm text-slate-500">Run the pipeline at least once to see usage here.</p>
+                        </Card>
+                    ) : viewMode === "each_run" ? (
+                        <PipelineRunObservabilityCard runs={runs} maxHeightClass="max-h-[calc(100vh-220px)]" />
+                    ) : viewMode === "avg_run" ? (
+                        <>
+                            <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+                                <Metric label="Runs in sample" value={String(n)} sub="Up to 500 loaded" />
+                                <Metric label="Avg tokens / run" value={num(runTotals.tokens / n, 0, 0)} sub={`Total ${num(runTotals.tokens, 0, 0)}`} />
+                                <Metric label="Avg cost / run" value={usdMicro(runTotals.cost / n)} sub={`Total ${usdMicro(runTotals.cost)}`} />
+                                <Metric label="Avg duration / run" value={formatDurationMs(runTotals.ms / n)} sub={`Total ${formatDurationMs(runTotals.ms)}`} />
+                            </div>
+                            <Card title="Average by agent" eyebrow="Among runs where that agent appears">
+                                {agentAvgs.length === 0 ? (
+                                    <p className="text-sm text-slate-500">No per-agent breakdown in this sample.</p>
+                                ) : (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full min-w-[360px] text-left text-sm">
+                                            <thead>
+                                                <tr className="border-b border-panelBorder text-slate-500">
+                                                    <th className="py-2 pr-2 font-medium">Agent</th>
+                                                    <th className="py-2 px-2 text-right font-medium">Avg time</th>
+                                                    <th className="py-2 px-2 text-right font-medium">Avg tokens</th>
+                                                    <th className="py-2 pl-2 text-right font-medium">Avg cost</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-panelBorder/60 text-slate-300">
+                                                {agentAvgs.map((row) => (
+                                                    <tr key={row.agent}>
+                                                        <td className="py-2 pr-2 font-mono text-xs text-slate-200">{row.agent}</td>
+                                                        <td className="py-2 px-2 text-right font-mono text-xs">{row.avgMs != null ? formatDurationMs(row.avgMs) : "—"}</td>
+                                                        <td className="py-2 px-2 text-right font-mono text-xs">{row.avgTok != null ? num(row.avgTok, 0, 0) : "—"}</td>
+                                                        <td className="py-2 pl-2 text-right font-mono text-xs text-emerald-400/80">{row.avgCost != null ? usdMicro(row.avgCost) : "—"}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </Card>
+                        </>
+                    ) : viewMode === "per_day" ? (
+                        <Card title="Totals by calendar day (UTC)" eyebrow="Aggregated">
+                            <Table
+                                rows={bucketsDay}
+                                rowKey={(b) => b.key}
+                                emptyTitle="No runs"
+                                columns={[
+                                    { key: "day", label: "Day", render: (b) => <span className="font-mono text-slate-200">{b.key}</span> },
+                                    { key: "n", label: "Runs", align: "right", render: (b) => num(b.runCount, 0, 0) },
+                                    { key: "tok", label: "Total tok", align: "right", render: (b) => num(b.total_tokens, 0, 0) },
+                                    { key: "atok", label: "Avg/run", align: "right", render: (b) => num(b.total_tokens / b.runCount, 0, 0) },
+                                    { key: "cost", label: "Total $", align: "right", render: (b) => usdMicro(b.total_cost) },
+                                    { key: "acost", label: "Avg $/run", align: "right", render: (b) => usdMicro(b.total_cost / b.runCount) },
+                                    { key: "ms", label: "Total time", align: "right", render: (b) => formatDurationMs(b.total_ms) },
+                                    { key: "ams", label: "Avg/run", align: "right", render: (b) => formatDurationMs(b.total_ms / b.runCount) },
+                                ]}
+                            />
+                        </Card>
+                    ) : (
+                        <Card title="Totals by calendar month (UTC)" eyebrow="Aggregated">
+                            <Table
+                                rows={bucketsMonth}
+                                rowKey={(b) => b.key}
+                                emptyTitle="No runs"
+                                columns={[
+                                    { key: "m", label: "Month", render: (b) => <span className="font-mono text-slate-200">{b.key}</span> },
+                                    { key: "n", label: "Runs", align: "right", render: (b) => num(b.runCount, 0, 0) },
+                                    { key: "tok", label: "Total tok", align: "right", render: (b) => num(b.total_tokens, 0, 0) },
+                                    { key: "atok", label: "Avg/run", align: "right", render: (b) => num(b.total_tokens / b.runCount, 0, 0) },
+                                    { key: "cost", label: "Total $", align: "right", render: (b) => usdMicro(b.total_cost) },
+                                    { key: "acost", label: "Avg $/run", align: "right", render: (b) => usdMicro(b.total_cost / b.runCount) },
+                                    { key: "ms", label: "Total time", align: "right", render: (b) => formatDurationMs(b.total_ms) },
+                                    { key: "ams", label: "Avg/run", align: "right", render: (b) => formatDurationMs(b.total_ms / b.runCount) },
+                                ]}
+                            />
+                        </Card>
+                    )}
+                </div>
+            );
+        }
+
         // --- Pages ---
 
         function OverviewPage() {
@@ -288,7 +571,7 @@
                     fetchApi("/api/alpaca/account").catch(() => ({ status: "error" })),
                 ]);
                 return { summary, runs, alerts, simPositions, brokerAccount };
-            }, [], 30000);
+            }, [], 15000);
 
             useLucide();
 
@@ -303,7 +586,7 @@
                     <div className="flex justify-between items-center">
                         <div>
                             <h1 className="text-2xl font-bold text-white tracking-tight">Overview</h1>
-                            <p className="text-sm text-slate-400 mt-1">High-level view of your multi-agent trading system.</p>
+                            <p className="text-sm text-slate-400 mt-1">High-level view of your multi-agent trading system. Refreshes every 15s.</p>
                         </div>
                         <Button icon="refresh-cw" onClick={reload}>Refresh</Button>
                     </div>
@@ -352,7 +635,7 @@
                     fetchApi("/api/trades?limit=50"),
                 ]);
                 return { portfolio, positions, trades };
-            }, []);
+            }, [], 15000);
             const [closingId, setClosingId] = useState(null);
             useLucide();
 
@@ -380,7 +663,7 @@
                             <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
                                 Simulator <Badge tone="blue">Internal Book</Badge>
                             </h1>
-                            <p className="text-sm text-slate-400 mt-1">Virtual portfolio for backtesting and strategy evaluation.</p>
+                            <p className="text-sm text-slate-400 mt-1">Virtual portfolio for backtesting and strategy evaluation. Refreshes every 15s (mark prices &amp; unrealized P/L).</p>
                         </div>
                         <Button icon="refresh-cw" onClick={reload}>Refresh</Button>
                     </div>
@@ -398,6 +681,17 @@
                                 { key: "value", label: "Value", render: r => money(r.position_value) },
                                 { key: "stop", label: "Stop", render: r => <span className="text-red-400">{money(r.stop_loss)}</span> },
                                 { key: "tp", label: "TP", render: r => <span className="text-emerald-400">{money(r.take_profit)}</span> },
+                                { key: "mark", label: "Mark", render: r => r.mark_price != null && Number.isFinite(Number(r.mark_price)) ? <span className="text-slate-200">{money(r.mark_price)}</span> : <span className="text-slate-500">—</span> },
+                                { key: "upl", label: "Unrealized P/L", align: "right", render: r => {
+                                    const u = r.unrealized_pl;
+                                    const p = r.unrealized_pl_pct;
+                                    if (u == null || !Number.isFinite(Number(u)) || p == null || !Number.isFinite(Number(p))) {
+                                        return <span className="text-slate-500 text-xs">—</span>;
+                                    }
+                                    const v = Number(u);
+                                    const cls = v >= 0 ? "text-emerald-400" : "text-red-400";
+                                    return <span className={cls}>{money(v)} <span className="text-slate-400 font-normal">({pct(Number(p))})</span></span>;
+                                }},
                                 { key: "action", align: "right", render: r => (
                                     <Button tone="default" className="h-7 px-2 text-xs" onClick={() => closePosition(r)} disabled={closingId === r.id}>
                                         {closingId === r.id ? "..." : "Close"}
@@ -435,7 +729,7 @@
                     fetchApi("/api/watchlist"),
                 ]);
                 return { assets, watchlist };
-            }, []);
+            }, [], 60000);
             
             const [toggling, setToggling] = useState({});
             
@@ -608,7 +902,7 @@
                     fetchApi("/api/alpaca/positions"),
                 ]);
                 return { account, positions };
-            }, [], 60000);
+            }, [], 30000);
             useLucide();
 
             if (loading) return <Loading />;
@@ -635,7 +929,7 @@
                             <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
                                 Alpaca Broker <Badge tone="amber">{a.paper === false ? "Live" : "Paper API"}</Badge>
                             </h1>
-                            <p className="text-sm text-slate-400 mt-1">Real or simulated execution via Alpaca API.</p>
+                            <p className="text-sm text-slate-400 mt-1">Real or simulated execution via Alpaca API. Auto-refreshes every 30s.</p>
                         </div>
                         <Button icon="refresh-cw" onClick={reload}>Refresh</Button>
                     </div>
@@ -851,16 +1145,35 @@
                 }
             };
 
-            const navItems = [
+            const navPrimary = [
                 { id: "overview", label: "Overview", icon: "layout-dashboard" },
                 { id: "simulator", label: "Simulator", icon: "wallet" },
                 { id: "alpaca", label: "Alpaca Broker", icon: "bar-chart-2" },
                 { id: "watchlist", label: "Watchlist", icon: "list" },
                 { id: "backtest", label: "Backtesting", icon: "line-chart" },
                 { id: "logs", label: "Live Terminal", icon: "terminal" },
+            ];
+            const navFooter = [
+                { id: "usage", label: "Usage & costs", icon: "pie-chart" },
                 { id: "settings", label: "Settings", icon: "settings" },
                 { id: "advisor", label: "AI Advisor", icon: "bot" },
             ];
+
+            const navButton = (item) => (
+                <button
+                    key={item.id}
+                    onClick={() => setPage(item.id)}
+                    className={classNames(
+                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
+                        page === item.id
+                            ? "bg-primary/10 text-primary"
+                            : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
+                    )}
+                >
+                    <i data-lucide={item.icon} style={{ width: 18, height: 18 }}></i>
+                    {item.label}
+                </button>
+            );
 
             return (
                 <div className="flex h-screen overflow-hidden bg-slate-950 font-sans">
@@ -874,22 +1187,13 @@
                             <span className="font-bold text-white tracking-tight">TradeAssist AI</span>
                         </div>
 
-                        <nav className="flex-1 py-6 px-3 space-y-1">
-                            {navItems.map(item => (
-                                <button
-                                    key={item.id}
-                                    onClick={() => setPage(item.id)}
-                                    className={classNames(
-                                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
-                                        page === item.id 
-                                            ? "bg-primary/10 text-primary" 
-                                            : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
-                                    )}
-                                >
-                                    <i data-lucide={item.icon} style={{width: 18, height: 18}}></i>
-                                    {item.label}
-                                </button>
-                            ))}
+                        <nav className="flex flex-1 flex-col py-6 px-3 min-h-0">
+                            <div className="space-y-1 flex-1 overflow-y-auto">
+                                {navPrimary.map(navButton)}
+                            </div>
+                            <div className="space-y-1 pt-4 mt-4 border-t border-slate-800 shrink-0">
+                                {navFooter.map(navButton)}
+                            </div>
                         </nav>
                         
                         {/* 
@@ -937,6 +1241,7 @@
                             {page === "watchlist" && <WatchlistPage />}
                             {page === "backtest" && <BacktestingPage />}
                             {page === "logs" && <LogsPage />}
+                            {page === "usage" && <UsagePage />}
                             {page === "settings" && <SettingsPage />}
                             {page === "advisor" && <AdvisorPage />}
                         </div>

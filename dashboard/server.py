@@ -87,12 +87,63 @@ def api_portfolio():
     return {"source": "simulator", **get_portfolio()}
 
 
+def _mark_price_usd(symbol: str, meta: dict) -> float | None:
+    """Best-effort live mark from CoinGecko (crypto) or yfinance (stock)."""
+    try:
+        at = (meta or {}).get("asset_type") or ""
+        if at == "crypto" and (meta or {}).get("coingecko_id"):
+            from tools.coingecko import get_price
+
+            p = float(get_price(meta["coingecko_id"]).get("price_usd") or 0)
+            return p if p > 0 else None
+        if at == "stock":
+            from tools.alpha_vantage import get_quote
+
+            p = float(get_quote(symbol).get("price_usd") or 0)
+            return p if p > 0 else None
+    except Exception:
+        return None
+    return None
+
+
+def _unrealized_for_position(position: dict, mark: float | None) -> tuple[float | None, float | None]:
+    """Returns (unrealized_usd, unrealized_pct_on_entry) for LONG/SHORT."""
+    if mark is None or mark <= 0:
+        return None, None
+    entry = float(position.get("entry_price") or 0)
+    qty = float(position.get("quantity") or 0)
+    if entry <= 0 or qty <= 0:
+        return None, None
+    direction = (position.get("direction") or "LONG").upper()
+    if direction == "LONG":
+        usd = (mark - entry) * qty
+        pct = ((mark - entry) / entry) * 100.0
+    else:
+        usd = (entry - mark) * qty
+        pct = ((entry - mark) / entry) * 100.0
+    return round(usd, 2), round(pct, 2)
+
+
 @app.get("/api/positions")
 def api_positions():
-    return [
-        {"source": "simulator", **position}
-        for position in get_open_positions()
-    ]
+    assets = get_all_assets()
+    by_symbol = {a["symbol"].upper(): a for a in assets}
+    rows = []
+    for position in get_open_positions():
+        sym = str(position.get("symbol", "")).upper()
+        meta = by_symbol.get(sym, {})
+        mark = _mark_price_usd(sym, meta)
+        upl, upl_pct = _unrealized_for_position(position, mark)
+        rows.append(
+            {
+                "source": "simulator",
+                **position,
+                "mark_price": round(mark, 4) if mark is not None else None,
+                "unrealized_pl": upl,
+                "unrealized_pl_pct": upl_pct,
+            }
+        )
+    return rows
 
 
 @app.get("/api/trades")

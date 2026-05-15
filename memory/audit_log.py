@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from sqlalchemy import (
     create_engine, Column, String, Float,
-    Integer, Boolean, Text, DateTime, ForeignKey
+    Integer, Boolean, Text, DateTime, ForeignKey, inspect, text,
 )
 from sqlalchemy.orm import DeclarativeBase, Session
 from config import DATABASE_URL
@@ -47,6 +47,10 @@ class PipelineRun(Base):
     total_tokens    = Column(Integer, default=0)
     total_cost_usd  = Column(Float,   default=0.0)
     errors          = Column(Text,    default="[]")
+    # Per-run observability (JSON text); added via migrate for existing DBs
+    token_usage_json    = Column(Text, nullable=True, default="{}")
+    agent_timings_json  = Column(Text, nullable=True, default="{}")
+    total_duration_ms   = Column(Float, nullable=True, default=0.0)
 
 
 class AlertLog(Base):
@@ -170,6 +174,39 @@ engine = create_engine(DATABASE_URL, echo=False)
 Base.metadata.create_all(engine)
 
 
+def migrate_pipeline_runs_observability_columns() -> None:
+    """Add token/timing columns to pipeline_runs on existing SQLite DBs."""
+    try:
+        inspector = inspect(engine)
+        if "pipeline_runs" not in inspector.get_table_names():
+            return
+        cols = {c["name"] for c in inspector.get_columns("pipeline_runs")}
+        with engine.begin() as conn:
+            if "token_usage_json" not in cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE pipeline_runs ADD COLUMN token_usage_json TEXT DEFAULT '{}'"
+                    )
+                )
+            if "agent_timings_json" not in cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE pipeline_runs ADD COLUMN agent_timings_json TEXT DEFAULT '{}'"
+                    )
+                )
+            if "total_duration_ms" not in cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE pipeline_runs ADD COLUMN total_duration_ms REAL DEFAULT 0"
+                    )
+                )
+    except Exception as e:
+        print(f"[DB] migrate pipeline_runs observability skipped: {e}")
+
+
+migrate_pipeline_runs_observability_columns()
+
+
 # ── Seed functions ─────────────────────────────────────────────────────────────
 
 def seed_assets_universe():
@@ -266,14 +303,43 @@ def initialize_db():
 
 # ── Query functions ────────────────────────────────────────────────────────────
 
+
+def _timing_dict_for_run(run_id: str) -> tuple[dict, float]:
+    """Agent name -> duration_ms, and sum of durations for the run."""
+    from observability.tracer import get_run_summary
+
+    summary = get_run_summary(run_id)
+    per_agent: dict[str, float] = {}
+    total = 0.0
+    for agent, trace in summary.items():
+        ms = trace.get("duration_ms")
+        if ms is None:
+            ms = 0.0
+        per_agent[agent] = round(float(ms), 2)
+        total += float(ms)
+    return per_agent, round(total, 2)
+
+
+def _safe_json_dict(raw: str | None, default: dict) -> dict:
+    if not raw:
+        return dict(default)
+    try:
+        out = json.loads(raw)
+        return out if isinstance(out, dict) else dict(default)
+    except json.JSONDecodeError:
+        return dict(default)
+
+
 def log_run(state: dict) -> None:
     decision    = state.get("decision") or {}
     token_usage = state.get("token_usage", {})
     total_tokens = sum(token_usage.values())
     total_cost   = (total_tokens / 1000) * 0.000375
+    run_id       = state["run_id"]
+    timings, total_ms = _timing_dict_for_run(run_id)
     with Session(engine) as session:
         run = PipelineRun(
-            id=state["run_id"],
+            id=run_id,
             triggered_at=datetime.fromisoformat(state["triggered_at"]),
             top_assets=json.dumps(state.get("top_opportunities", [])),
             decision_symbol=decision.get("symbol"),
@@ -283,6 +349,9 @@ def log_run(state: dict) -> None:
             total_tokens=total_tokens,
             total_cost_usd=round(total_cost, 6),
             errors=json.dumps(state.get("errors", [])),
+            token_usage_json=json.dumps(token_usage),
+            agent_timings_json=json.dumps(timings),
+            total_duration_ms=total_ms,
         )
         session.add(run)
         session.commit()
@@ -325,24 +394,46 @@ def log_alert(symbol: str, action: str, confidence: int, message: str) -> None:
 
 
 def get_recent_runs(limit: int = 10) -> list[dict]:
+    from observability.cost_tracker import calculate_cost
+
     with Session(engine) as session:
         runs = session.query(PipelineRun)\
             .order_by(PipelineRun.triggered_at.desc())\
             .limit(limit).all()
-        return [
-            {
-                "id":             r.id[:8],
-                "triggered_at":   str(r.triggered_at),
-                "top_assets":     json.loads(r.top_assets),
-                "action":         r.decision_action,
-                "symbol":         r.decision_symbol,
-                "confidence":     r.confidence,
-                "alert_sent":     r.alert_sent,
-                "total_tokens":   r.total_tokens,
-                "total_cost_usd": r.total_cost_usd,
-            }
-            for r in runs
-        ]
+        rows = []
+        for r in runs:
+            token_usage = _safe_json_dict(
+                getattr(r, "token_usage_json", None) or "{}", {}
+            )
+            agent_timings_ms = _safe_json_dict(
+                getattr(r, "agent_timings_json", None) or "{}", {}
+            )
+            total_dur = float(getattr(r, "total_duration_ms", 0) or 0)
+
+            if token_usage:
+                cost_full = calculate_cost(token_usage)
+                cost_by_agent = {k: v for k, v in cost_full.items() if k != "total"}
+                total_cost_computed = cost_full.get("total", r.total_cost_usd or 0)
+            else:
+                cost_by_agent = {}
+                total_cost_computed = float(r.total_cost_usd or 0)
+
+            rows.append({
+                "id":               r.id[:8],
+                "triggered_at":     str(r.triggered_at),
+                "top_assets":       json.loads(r.top_assets),
+                "action":           r.decision_action,
+                "symbol":           r.decision_symbol,
+                "confidence":       r.confidence,
+                "alert_sent":       r.alert_sent,
+                "total_tokens":     r.total_tokens,
+                "total_cost_usd":   round(float(total_cost_computed), 6),
+                "token_usage":      token_usage,
+                "cost_by_agent":    cost_by_agent,
+                "agent_timings_ms": agent_timings_ms,
+                "total_duration_ms": total_dur,
+            })
+        return rows
 
 
 def get_recent_alerts(limit: int = 10) -> list[dict]:
