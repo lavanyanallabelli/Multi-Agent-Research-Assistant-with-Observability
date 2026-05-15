@@ -63,7 +63,14 @@
 
     <script type="text/babel">
         const { useEffect, useMemo, useRef, useState, useCallback } = React;
-        const API = "http://localhost:8000";
+        // Must use same origin on HTTPS deploys. Calling http://localhost from a public site
+        // triggers browser "local network / this device" permission prompts and fails anyway.
+        const API = (() => {
+            if (typeof window === "undefined" || !window.location) return "http://localhost:8000";
+            const { protocol, host } = window.location;
+            if (protocol === "http:" || protocol === "https:") return `${protocol}//${host}`;
+            return "http://localhost:8000";
+        })();
 
         // --- Utils ---
         async function fetchApi(path) {
