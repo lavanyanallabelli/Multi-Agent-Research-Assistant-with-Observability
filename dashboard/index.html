@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en" class="dark">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -35,23 +36,28 @@
             background-color: #0b1120;
             color: #f1f5f9;
         }
+
         /* Custom scrollbar for terminal */
         .term-scroll::-webkit-scrollbar {
             width: 8px;
             height: 8px;
         }
+
         .term-scroll::-webkit-scrollbar-track {
-            background: #0f172a; 
+            background: #0f172a;
         }
+
         .term-scroll::-webkit-scrollbar-thumb {
-            background: #334155; 
+            background: #334155;
             border-radius: 4px;
         }
+
         .term-scroll::-webkit-scrollbar-thumb:hover {
-            background: #475569; 
+            background: #475569;
         }
     </style>
 </head>
+
 <body class="bg-slate-950 text-slate-200 antialiased selection:bg-primary selection:text-white">
     <div id="root"></div>
 
@@ -210,7 +216,7 @@
                     )}
                     {...props}
                 >
-                    {icon && <i data-lucide={icon} style={{width:16, height:16}}></i>}
+                    {icon && <i data-lucide={icon} style={{ width: 16, height: 16 }}></i>}
                     {children}
                 </button>
             );
@@ -682,21 +688,25 @@
                                 { key: "stop", label: "Stop", render: r => <span className="text-red-400">{money(r.stop_loss)}</span> },
                                 { key: "tp", label: "TP", render: r => <span className="text-emerald-400">{money(r.take_profit)}</span> },
                                 { key: "mark", label: "Mark", render: r => r.mark_price != null && Number.isFinite(Number(r.mark_price)) ? <span className="text-slate-200">{money(r.mark_price)}</span> : <span className="text-slate-500">—</span> },
-                                { key: "upl", label: "Unrealized P/L", align: "right", render: r => {
-                                    const u = r.unrealized_pl;
-                                    const p = r.unrealized_pl_pct;
-                                    if (u == null || !Number.isFinite(Number(u)) || p == null || !Number.isFinite(Number(p))) {
-                                        return <span className="text-slate-500 text-xs">—</span>;
+                                {
+                                    key: "upl", label: "Unrealized P/L", align: "right", render: r => {
+                                        const u = r.unrealized_pl;
+                                        const p = r.unrealized_pl_pct;
+                                        if (u == null || !Number.isFinite(Number(u)) || p == null || !Number.isFinite(Number(p))) {
+                                            return <span className="text-slate-500 text-xs">—</span>;
+                                        }
+                                        const v = Number(u);
+                                        const cls = v >= 0 ? "text-emerald-400" : "text-red-400";
+                                        return <span className={cls}>{money(v)} <span className="text-slate-400 font-normal">({pct(Number(p))})</span></span>;
                                     }
-                                    const v = Number(u);
-                                    const cls = v >= 0 ? "text-emerald-400" : "text-red-400";
-                                    return <span className={cls}>{money(v)} <span className="text-slate-400 font-normal">({pct(Number(p))})</span></span>;
-                                }},
-                                { key: "action", align: "right", render: r => (
-                                    <Button tone="default" className="h-7 px-2 text-xs" onClick={() => closePosition(r)} disabled={closingId === r.id}>
-                                        {closingId === r.id ? "..." : "Close"}
-                                    </Button>
-                                )},
+                                },
+                                {
+                                    key: "action", align: "right", render: r => (
+                                        <Button tone="default" className="h-7 px-2 text-xs" onClick={() => closePosition(r)} disabled={closingId === r.id}>
+                                            {closingId === r.id ? "..." : "Close"}
+                                        </Button>
+                                    )
+                                },
                             ]}
                         />
                     </Card>
@@ -730,9 +740,9 @@
                 ]);
                 return { assets, watchlist };
             }, [], 60000);
-            
+
             const [toggling, setToggling] = useState({});
-            
+
             const toggleWatchlist = async (symbol, inWatchlist) => {
                 setToggling(prev => ({ ...prev, [symbol]: true }));
                 try {
@@ -748,24 +758,24 @@
                     setToggling(prev => ({ ...prev, [symbol]: false }));
                 }
             };
-            
+
             useLucide();
-            
+
             if (loading) return <Loading />;
             if (error) return <div className="text-red-400">Error: {error}</div>;
-            
+
             const watchlistSymbols = new Set(data.watchlist.map(w => w.symbol));
             const assets = data.assets || [];
-            
+
             return (
                 <div className="space-y-6 fade-in">
                     <div>
                         <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
-                            Watchlist & Universe <i data-lucide="list" className="text-primary" style={{width:20}}></i>
+                            Watchlist & Universe <i data-lucide="list" className="text-primary" style={{ width: 20 }}></i>
                         </h1>
                         <p className="text-sm text-slate-400 mt-1">Manage which assets the pipeline monitors.</p>
                     </div>
-                    
+
                     <Card title="Asset Universe" eyebrow="Trading Pairs">
                         <Table
                             rows={assets}
@@ -775,21 +785,23 @@
                                 { key: "symbol", label: "Symbol", render: r => <span className="font-semibold text-white">{r.symbol}</span> },
                                 { key: "name", label: "Name", render: r => r.name },
                                 { key: "type", label: "Type", render: r => <Badge tone={r.asset_type === "crypto" ? "amber" : "blue"}>{r.asset_type.toUpperCase()}</Badge> },
-                                { key: "status", label: "Watchlist", render: r => {
-                                    const inW = watchlistSymbols.has(r.symbol);
-                                    return (
-                                        <button 
-                                            disabled={toggling[r.symbol]}
-                                            onClick={() => toggleWatchlist(r.symbol, inW)}
-                                            className={classNames(
-                                                "px-3 py-1 rounded text-xs font-medium transition-colors",
-                                                inW ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30" : "bg-slate-800 text-slate-400 hover:bg-slate-700"
-                                            )}
-                                        >
-                                            {toggling[r.symbol] ? "..." : (inW ? "Active" : "Add")}
-                                        </button>
-                                    );
-                                }},
+                                {
+                                    key: "status", label: "Watchlist", render: r => {
+                                        const inW = watchlistSymbols.has(r.symbol);
+                                        return (
+                                            <button
+                                                disabled={toggling[r.symbol]}
+                                                onClick={() => toggleWatchlist(r.symbol, inW)}
+                                                className={classNames(
+                                                    "px-3 py-1 rounded text-xs font-medium transition-colors",
+                                                    inW ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30" : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+                                                )}
+                                            >
+                                                {toggling[r.symbol] ? "..." : (inW ? "Active" : "Add")}
+                                            </button>
+                                        );
+                                    }
+                                },
                             ]}
                         />
                     </Card>
@@ -805,14 +817,14 @@
             const [running, setRunning] = useState(false);
             const [error, setError] = useState("");
             useLucide();
-            
+
             const runBacktest = async (e) => {
                 e.preventDefault();
                 if (!symbol) return;
                 setRunning(true);
                 setError("");
                 setResult(null);
-                
+
                 try {
                     const res = await postApi(`/api/backtest/${symbol}?days=${days}&hold_days=${holdDays}`);
                     if (res.status === "error") {
@@ -820,7 +832,7 @@
                         setRunning(false);
                         return;
                     }
-                    
+
                     // Start polling
                     const poll = setInterval(async () => {
                         try {
@@ -840,21 +852,21 @@
                             setError("Polling error: " + err.message);
                         }
                     }, 2000);
-                } catch(err) {
+                } catch (err) {
                     setError("Failed to start backtest: " + err.message);
                     setRunning(false);
                 }
             };
-            
+
             return (
                 <div className="max-w-3xl space-y-6 fade-in">
                     <div>
                         <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
-                            Backtesting <i data-lucide="line-chart" className="text-primary" style={{width:20}}></i>
+                            Backtesting <i data-lucide="line-chart" className="text-primary" style={{ width: 20 }}></i>
                         </h1>
                         <p className="text-sm text-slate-400 mt-1">Evaluate strategy performance on historical data.</p>
                     </div>
-                    
+
                     <Card title="Configure Run">
                         <form onSubmit={runBacktest} className="space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -870,7 +882,7 @@
                             {error && <div className="text-red-400 text-sm">{error}</div>}
                         </form>
                     </Card>
-                    
+
                     {running && (
                         <Card>
                             <div className="py-12 flex flex-col items-center justify-center text-slate-400">
@@ -879,7 +891,7 @@
                             </div>
                         </Card>
                     )}
-                    
+
                     {result && result.status !== "error" && result.status !== "not_run" && (
                         <Card title="Results" eyebrow={result.symbol}>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -917,7 +929,7 @@
                     await postApi("/api/alpaca/positions/close", { symbol });
                     alert(`Market close order submitted for ${symbol}.`);
                     reload();
-                } catch(e) {
+                } catch (e) {
                     alert("Failed to close position: " + e.message);
                 }
             };
@@ -991,11 +1003,11 @@
                 <div className="h-full flex flex-col space-y-4 fade-in">
                     <div>
                         <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
-                            Live Terminal <i data-lucide="terminal" className="text-primary" style={{width:20}}></i>
+                            Live Terminal <i data-lucide="terminal" className="text-primary" style={{ width: 20 }}></i>
                         </h1>
                         <p className="text-sm text-slate-400 mt-1">Real-time pipeline execution logs streaming via SSE.</p>
                     </div>
-                    
+
                     <div className="flex-1 min-h-[500px] bg-[#090e17] rounded-xl border border-panelBorder p-4 font-mono text-xs md:text-sm overflow-y-auto term-scroll shadow-glass relative">
                         {logs.length === 0 && <div className="text-slate-500 italic">Connecting to log stream...</div>}
                         {logs.map((line, i) => {
@@ -1039,7 +1051,7 @@
                         alpaca_trade_size: Number(form.alpaca_trade_size),
                     });
                     alert("Settings saved successfully.");
-                } catch(e) {
+                } catch (e) {
                     alert(e.message);
                 } finally {
                     setSaving(false);
@@ -1058,18 +1070,18 @@
 
                     <Card title="Risk & Portfolio">
                         <div className="grid grid-cols-2 gap-4">
-                            <Field label="Portfolio Balance ($)" type="number" value={form.portfolio_balance} onChange={v => setForm({...form, portfolio_balance: v})} />
-                            <Field label="Max Open Positions" type="number" value={form.max_positions} onChange={v => setForm({...form, max_positions: v})} />
-                            <Field label="Stop Loss (%)" type="number" value={form.stop_loss_pct} onChange={v => setForm({...form, stop_loss_pct: v})} />
-                            <Field label="Take Profit (%)" type="number" value={form.take_profit_pct} onChange={v => setForm({...form, take_profit_pct: v})} />
+                            <Field label="Portfolio Balance ($)" type="number" value={form.portfolio_balance} onChange={v => setForm({ ...form, portfolio_balance: v })} />
+                            <Field label="Max Open Positions" type="number" value={form.max_positions} onChange={v => setForm({ ...form, max_positions: v })} />
+                            <Field label="Stop Loss (%)" type="number" value={form.stop_loss_pct} onChange={v => setForm({ ...form, stop_loss_pct: v })} />
+                            <Field label="Take Profit (%)" type="number" value={form.take_profit_pct} onChange={v => setForm({ ...form, take_profit_pct: v })} />
                         </div>
                     </Card>
 
                     <Card title="Agent Thresholds">
                         <div className="grid grid-cols-2 gap-4">
-                            <Field label="Min Confidence Score (0-100)" type="number" value={form.confidence_threshold} onChange={v => setForm({...form, confidence_threshold: v})} />
-                            <Field label="Scan Interval (Minutes)" type="number" value={form.scan_interval_minutes} onChange={v => setForm({...form, scan_interval_minutes: v})} />
-                            <Field label="Alpaca Trade Size ($)" type="number" value={form.alpaca_trade_size} onChange={v => setForm({...form, alpaca_trade_size: v})} />
+                            <Field label="Min Confidence Score (0-100)" type="number" value={form.confidence_threshold} onChange={v => setForm({ ...form, confidence_threshold: v })} />
+                            <Field label="Scan Interval (Minutes)" type="number" value={form.scan_interval_minutes} onChange={v => setForm({ ...form, scan_interval_minutes: v })} />
+                            <Field label="Alpaca Trade Size ($)" type="number" value={form.alpaca_trade_size} onChange={v => setForm({ ...form, alpaca_trade_size: v })} />
                         </div>
                     </Card>
 
@@ -1093,7 +1105,7 @@
 
                     <div className="flex-1 mt-6 rounded-xl border border-dashed border-panelBorder bg-slate-900/30 flex flex-col items-center justify-center text-center p-10">
                         <div className="w-16 h-16 rounded-full bg-blue-900/40 flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(59,130,246,0.3)]">
-                            <i data-lucide="bot" className="text-primary" style={{width:32, height:32}}></i>
+                            <i data-lucide="bot" className="text-primary" style={{ width: 32, height: 32 }}></i>
                         </div>
                         <h3 className="text-lg font-semibold text-white mb-2">Agent Chat Interface</h3>
                         <p className="text-slate-400 max-w-md">
@@ -1128,7 +1140,7 @@
                 try {
                     await postApi("/api/trading/state", { is_paused: !isPaused });
                     reloadState();
-                } catch(e) {
+                } catch (e) {
                     alert("Failed to toggle state: " + e.message);
                 }
             };
@@ -1138,7 +1150,7 @@
                 try {
                     await postApi("/api/trading/trigger");
                     alert("Pipeline triggered successfully! Check the Live Terminal for logs.");
-                } catch(e) {
+                } catch (e) {
                     alert("Failed to trigger: " + e.message);
                 } finally {
                     setTriggering(false);
@@ -1177,12 +1189,12 @@
 
             return (
                 <div className="flex h-screen overflow-hidden bg-slate-950 font-sans">
-                    
+
                     {/* Sidebar */}
                     <aside className="w-64 border-r border-slate-800 bg-slate-900/50 flex flex-col">
                         <div className="h-16 flex items-center px-6 border-b border-slate-800">
                             <div className="w-8 h-8 rounded bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mr-3 shadow-[0_0_15px_rgba(59,130,246,0.5)]">
-                                <i data-lucide="activity" className="text-white" style={{width:18, height:18}}></i>
+                                <i data-lucide="activity" className="text-white" style={{ width: 18, height: 18 }}></i>
                             </div>
                             <span className="font-bold text-white tracking-tight">TradeAssist AI</span>
                         </div>
@@ -1195,7 +1207,7 @@
                                 {navFooter.map(navButton)}
                             </div>
                         </nav>
-                        
+
                         {/* 
                         <div className="p-4 border-t border-slate-800">
                             <div className="rounded-lg bg-slate-800/50 p-4 shadow-inner">
@@ -1254,8 +1266,22 @@
         root.render(<App />);
     </script>
     <style>
-        .fade-in { animation: fadeIn 0.3s ease-in-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(4px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
     </style>
 </body>
+
 </html>
