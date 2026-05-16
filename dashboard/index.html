@@ -55,6 +55,19 @@
         .term-scroll::-webkit-scrollbar-thumb:hover {
             background: #475569;
         }
+
+        .safe-pb {
+            padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+        }
+
+        .safe-pt {
+            padding-top: env(safe-area-inset-top, 0px);
+        }
+
+        .touch-pan-x {
+            touch-action: pan-x;
+            -webkit-overflow-scrolling: touch;
+        }
     </style>
 </head>
 
@@ -233,15 +246,15 @@
             return (
                 <section className={classNames("rounded-xl border border-panelBorder bg-panel backdrop-blur-md shadow-glass", className)}>
                     {(title || eyebrow || action) && (
-                        <div className="flex items-start justify-between gap-4 border-b border-panelBorder px-5 py-4">
-                            <div>
+                        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-panelBorder px-3 py-3 sm:px-5 sm:py-4">
+                            <div className="min-w-0 flex-1">
                                 {eyebrow && <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">{eyebrow}</div>}
-                                {title && <h2 className="text-base font-semibold text-slate-100">{title}</h2>}
+                                {title && <h2 className="text-sm font-semibold text-slate-100 sm:text-base">{title}</h2>}
                             </div>
-                            {action}
+                            {action && <div className="shrink-0">{action}</div>}
                         </div>
                     )}
-                    <div className="p-5">{children}</div>
+                    <div className="p-3 sm:p-5">{children}</div>
                 </section>
             );
         }
@@ -249,10 +262,10 @@
         function Metric({ label, value, sub, tone = "dark" }) {
             const color = tone === "green" ? "text-emerald-400" : tone === "red" ? "text-red-400" : "text-white";
             return (
-                <div className="rounded-xl border border-panelBorder bg-slate-800/50 p-4 shadow-glass backdrop-blur-sm">
-                    <div className="text-xs font-medium uppercase tracking-wider text-slate-400">{label}</div>
-                    <div className={classNames("mt-2 text-2xl font-bold tracking-tight drop-shadow-sm", color)}>{value}</div>
-                    {sub && <div className="mt-1 text-xs text-slate-500">{sub}</div>}
+                <div className="rounded-xl border border-panelBorder bg-slate-800/50 p-3 shadow-glass backdrop-blur-sm sm:p-4">
+                    <div className="text-[11px] font-medium uppercase tracking-wider text-slate-400 sm:text-xs">{label}</div>
+                    <div className={classNames("mt-1 text-xl font-bold tracking-tight drop-shadow-sm break-words sm:mt-2 sm:text-2xl", color)}>{value}</div>
+                    {sub && <div className="mt-1 text-[11px] text-slate-500 sm:text-xs">{sub}</div>}
                 </div>
             );
         }
@@ -260,12 +273,12 @@
         function Table({ columns, rows, rowKey, emptyTitle }) {
             if (!rows || rows.length === 0) return <div className="py-8 text-center text-slate-500">{emptyTitle || "No data"}</div>;
             return (
-                <div className="overflow-x-auto rounded-lg border border-panelBorder">
-                    <table className="min-w-full divide-y divide-panelBorder text-sm">
+                <div className="touch-pan-x overflow-x-auto rounded-lg border border-panelBorder">
+                    <table className="min-w-full divide-y divide-panelBorder text-xs sm:text-sm">
                         <thead className="bg-slate-800/80">
                             <tr>
                                 {columns.map((c, i) => (
-                                    <th key={c.key || i} className={classNames("whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400", c.align === "right" && "text-right")}>
+                                    <th key={c.key || i} className={classNames("whitespace-nowrap px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400 sm:px-4 sm:py-3 sm:text-xs", c.align === "right" && "text-right")}>
                                         {c.label}
                                     </th>
                                 ))}
@@ -275,7 +288,7 @@
                             {rows.map((row, index) => (
                                 <tr key={rowKey ? rowKey(row, index) : index} className="hover:bg-slate-800/50 transition-colors">
                                     {columns.map((c, i) => (
-                                        <td key={c.key || i} className={classNames("whitespace-nowrap px-4 py-3 text-slate-300", c.align === "right" && "text-right")}>
+                                        <td key={c.key || i} className={classNames("max-w-[10rem] truncate whitespace-nowrap px-2 py-2 text-slate-300 sm:max-w-none sm:px-4 sm:py-3 sm:whitespace-nowrap", c.align === "right" && "text-right")}>
                                             {c.render ? c.render(row, index) : row[c.key]}
                                         </td>
                                     ))}
@@ -596,12 +609,12 @@
 
             return (
                 <div className="space-y-6 fade-in">
-                    <div className="flex justify-between items-center">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div>
                             <h1 className="text-2xl font-bold text-white tracking-tight">Overview</h1>
                             <p className="text-sm text-slate-400 mt-1">High-level view of your multi-agent trading system. Refreshes every 15s.</p>
                         </div>
-                        <Button icon="refresh-cw" onClick={reload}>Refresh</Button>
+                        <Button icon="refresh-cw" onClick={reload} className="w-full shrink-0 sm:w-auto">Refresh</Button>
                     </div>
 
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -671,14 +684,14 @@
 
             return (
                 <div className="space-y-6 fade-in">
-                    <div className="flex justify-between items-center">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div>
-                            <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
+                            <h1 className="text-2xl font-bold text-white tracking-tight flex flex-wrap items-center gap-x-3 gap-y-1">
                                 Simulator <Badge tone="blue">Internal Book</Badge>
                             </h1>
                             <p className="text-sm text-slate-400 mt-1">Virtual portfolio for backtesting and strategy evaluation. Refreshes every 15s (mark prices &amp; unrealized P/L).</p>
                         </div>
-                        <Button icon="refresh-cw" onClick={reload}>Refresh</Button>
+                        <Button icon="refresh-cw" onClick={reload} className="w-full shrink-0 sm:w-auto">Refresh</Button>
                     </div>
 
                     <Card title="Open Positions" eyebrow="Active Trades">
@@ -777,7 +790,7 @@
             return (
                 <div className="space-y-6 fade-in">
                     <div>
-                        <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
+                        <h1 className="text-2xl font-bold text-white tracking-tight flex flex-wrap items-center gap-x-3 gap-y-1">
                             Watchlist & Universe <i data-lucide="list" className="text-primary" style={{ width: 20 }}></i>
                         </h1>
                         <p className="text-sm text-slate-400 mt-1">Manage which assets the pipeline monitors.</p>
@@ -868,7 +881,7 @@
             return (
                 <div className="max-w-3xl space-y-6 fade-in">
                     <div>
-                        <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
+                        <h1 className="text-2xl font-bold text-white tracking-tight flex flex-wrap items-center gap-x-3 gap-y-1">
                             Backtesting <i data-lucide="line-chart" className="text-primary" style={{ width: 20 }}></i>
                         </h1>
                         <p className="text-sm text-slate-400 mt-1">Evaluate strategy performance on historical data.</p>
@@ -943,14 +956,14 @@
 
             return (
                 <div className="space-y-6 fade-in">
-                    <div className="flex justify-between items-center">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div>
-                            <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
+                            <h1 className="text-2xl font-bold text-white tracking-tight flex flex-wrap items-center gap-x-3 gap-y-1">
                                 Alpaca Broker <Badge tone="amber">{a.paper === false ? "Live" : "Paper API"}</Badge>
                             </h1>
                             <p className="text-sm text-slate-400 mt-1">Real or simulated execution via Alpaca API. Auto-refreshes every 30s.</p>
                         </div>
-                        <Button icon="refresh-cw" onClick={reload}>Refresh</Button>
+                        <Button icon="refresh-cw" onClick={reload} className="w-full shrink-0 sm:w-auto">Refresh</Button>
                     </div>
 
                     {a.status === "error" ? (
@@ -1009,7 +1022,7 @@
             return (
                 <div className="h-full flex flex-col space-y-4 fade-in">
                     <div>
-                        <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
+                        <h1 className="text-2xl font-bold text-white tracking-tight flex flex-wrap items-center gap-x-3 gap-y-1">
                             Live Terminal <i data-lucide="terminal" className="text-primary" style={{ width: 20 }}></i>
                         </h1>
                         <p className="text-sm text-slate-400 mt-1">Real-time pipeline execution logs streaming via SSE.</p>
@@ -1104,7 +1117,7 @@
             return (
                 <div className="h-full flex flex-col fade-in">
                     <div>
-                        <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
+                        <h1 className="text-2xl font-bold text-white tracking-tight flex flex-wrap items-center gap-x-3 gap-y-1">
                             AI Advisor <Badge tone="blue">Coming Soon</Badge>
                         </h1>
                         <p className="text-sm text-slate-400 mt-1">Interact with your trading agents to understand their decisions.</p>
@@ -1130,6 +1143,7 @@
         // --- Main Layout ---
         function App() {
             const [page, setPage] = useState("overview");
+            const [navOpen, setNavOpen] = useState(false);
             const { data: stateData, reload: reloadState } = useAsyncData(() => fetchApi("/api/trading/state"), [], 10000);
             const scrollRef = useRef(null);
 
@@ -1138,6 +1152,28 @@
                     scrollRef.current.scrollTop = 0;
                 }
             }, [page]);
+
+            useEffect(() => {
+                const onEsc = (e) => {
+                    if (e.key === "Escape") setNavOpen(false);
+                };
+                window.addEventListener("keydown", onEsc);
+                return () => window.removeEventListener("keydown", onEsc);
+            }, []);
+
+            useEffect(() => {
+                const mq = window.matchMedia("(max-width: 1023px)");
+                const sync = () => {
+                    document.body.style.overflow = mq.matches && navOpen ? "hidden" : "";
+                };
+                sync();
+                mq.addEventListener("change", sync);
+                return () => {
+                    mq.removeEventListener("change", sync);
+                    document.body.style.overflow = "";
+                };
+            }, [navOpen]);
+
             const [triggering, setTriggering] = useState(false);
             const isPaused = stateData?.is_paused || false;
 
@@ -1177,83 +1213,100 @@
                 { id: "settings", label: "Settings", icon: "settings" },
                 { id: "advisor", label: "AI Advisor", icon: "bot" },
             ];
+            const allNavItems = [...navPrimary, ...navFooter];
+            const currentNavLabel = allNavItems.find((n) => n.id === page)?.label ?? "TradeAssist AI";
+
+            const closeNav = () => setNavOpen(false);
 
             const navButton = (item) => (
                 <button
                     key={item.id}
-                    onClick={() => setPage(item.id)}
+                    type="button"
+                    onClick={() => {
+                        setPage(item.id);
+                        closeNav();
+                    }}
                     className={classNames(
-                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all",
+                        "flex min-h-[44px] w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all lg:min-h-0",
                         page === item.id
                             ? "bg-primary/10 text-primary"
                             : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
                     )}
                 >
                     <i data-lucide={item.icon} style={{ width: 18, height: 18 }}></i>
-                    {item.label}
+                    <span className="truncate">{item.label}</span>
                 </button>
             );
 
             return (
-                <div className="flex h-screen overflow-hidden bg-slate-950 font-sans">
+                <div className="relative flex h-[100dvh] overflow-hidden bg-slate-950 font-sans">
 
-                    {/* Sidebar */}
-                    <aside className="w-64 border-r border-slate-800 bg-slate-900/50 flex flex-col">
-                        <div className="h-16 flex items-center px-6 border-b border-slate-800">
-                            <div className="w-8 h-8 rounded bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center mr-3 shadow-[0_0_15px_rgba(59,130,246,0.5)]">
-                                <i data-lucide="activity" className="text-white" style={{ width: 18, height: 18 }}></i>
+                    {/* Mobile overlay */}
+                    <button
+                        type="button"
+                        aria-label="Close menu"
+                        className={classNames(
+                            "fixed inset-0 z-40 bg-black/60 backdrop-blur-[2px] transition-opacity lg:hidden",
+                            navOpen ? "opacity-100 pointer-events-auto" : "pointer-events-none opacity-0"
+                        )}
+                        onClick={closeNav}
+                    />
+
+                    {/* Sidebar — drawer on mobile, column on lg */}
+                    <aside
+                        className={classNames(
+                            "fixed inset-y-0 left-0 z-50 flex w-[min(18rem,88vw)] flex-col border-r border-slate-800 bg-slate-900/98 backdrop-blur-md transition-transform duration-200 ease-out lg:relative lg:z-auto lg:w-64 lg:max-w-none lg:translate-x-0 lg:bg-slate-900/50",
+                            navOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full lg:translate-x-0"
+                        )}
+                    >
+                        <div className="safe-pt flex h-14 shrink-0 items-center justify-between border-b border-slate-800 px-4 lg:h-16 lg:px-6">
+                            <div className="flex min-w-0 flex-1 items-center gap-3">
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-gradient-to-br from-blue-500 to-indigo-600 shadow-[0_0_15px_rgba(59,130,246,0.5)]">
+                                    <i data-lucide="activity" className="text-white" style={{ width: 18, height: 18 }}></i>
+                                </div>
+                                <span className="truncate font-bold tracking-tight text-white">TradeAssist AI</span>
                             </div>
-                            <span className="font-bold text-white tracking-tight">TradeAssist AI</span>
+                            <button
+                                type="button"
+                                className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white lg:hidden"
+                                onClick={closeNav}
+                                aria-label="Close navigation"
+                            >
+                                <i data-lucide="x" style={{ width: 22, height: 22 }}></i>
+                            </button>
                         </div>
 
-                        <nav className="flex flex-1 flex-col py-6 px-3 min-h-0">
-                            <div className="space-y-1 flex-1 overflow-y-auto">
+                        <nav className="flex min-h-0 flex-1 flex-col overflow-hidden px-2 py-4 lg:px-3 lg:py-6">
+                            <div className="flex-1 space-y-1 overflow-y-auto overscroll-contain">
                                 {navPrimary.map(navButton)}
                             </div>
-                            <div className="space-y-1 pt-4 mt-4 border-t border-slate-800 shrink-0">
+                            <div className="mt-4 shrink-0 space-y-1 border-t border-slate-800 pt-4">
                                 {navFooter.map(navButton)}
                             </div>
                         </nav>
-
-                        {/* 
-                        <div className="p-4 border-t border-slate-800">
-                            <div className="rounded-lg bg-slate-800/50 p-4 shadow-inner">
-                                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">System Status</div>
-                                <div className="flex items-center justify-between mb-4">
-                                    <span className="text-sm text-slate-300">Trading</span>
-                                    <Badge tone={isPaused ? "amber" : "green"}>{isPaused ? "Paused" : "Active"}</Badge>
-                                </div>
-                                <div className="space-y-2">
-                                    <Button 
-                                        tone={isPaused ? "success" : "amber"} 
-                                        icon={isPaused ? "play" : "pause"} 
-                                        className="w-full text-xs"
-                                        onClick={togglePause}
-                                    >
-                                        {isPaused ? "Resume Trading" : "Pause Trading"}
-                                    </Button>
-                                    <Button 
-                                        tone="primary" 
-                                        icon="zap" 
-                                        className="w-full text-xs"
-                                        onClick={triggerRun}
-                                        disabled={triggering}
-                                    >
-                                        Run Now
-                                    </Button>
-                                </div>
-                            </div>
-                        </div> 
-                        */}
                     </aside>
 
-                    {/* Main Content */}
-                    <main className="flex-1 relative overflow-hidden bg-gradient-to-br from-slate-950 to-slate-900">
-                        {/* Decorative background glow */}
-                        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-blue-600/10 blur-[120px] pointer-events-none"></div>
-                        <div className="absolute bottom-[-20%] right-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-600/10 blur-[120px] pointer-events-none"></div>
+                    {/* Main */}
+                    <main className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-gradient-to-br from-slate-950 to-slate-900">
+                        <header className="safe-pt flex h-14 shrink-0 items-center gap-3 border-b border-slate-800/80 bg-slate-950/90 px-3 backdrop-blur-md lg:hidden">
+                            <button
+                                type="button"
+                                className="rounded-lg p-2.5 text-slate-200 hover:bg-slate-800"
+                                onClick={() => setNavOpen(true)}
+                                aria-label="Open navigation menu"
+                            >
+                                <i data-lucide="menu" style={{ width: 22, height: 22 }}></i>
+                            </button>
+                            <span className="min-w-0 truncate text-sm font-semibold text-white">{currentNavLabel}</span>
+                        </header>
 
-                        <div ref={scrollRef} className="absolute inset-0 overflow-y-auto p-4 md:p-8 pb-32 z-10">
+                        <div className="pointer-events-none absolute top-[-20%] left-[-10%] h-[50%] w-[50%] rounded-full bg-blue-600/10 blur-[120px]"></div>
+                        <div className="pointer-events-none absolute bottom-[-20%] right-[-10%] h-[40%] w-[40%] rounded-full bg-indigo-600/10 blur-[120px]"></div>
+
+                        <div
+                            ref={scrollRef}
+                            className="relative z-10 flex-1 overflow-y-auto overscroll-y-contain p-3 pb-24 safe-pb sm:p-4 md:p-8 lg:pb-32"
+                        >
                             {page === "overview" && <OverviewPage />}
                             {page === "simulator" && <SimulatorPage />}
                             {page === "alpaca" && <AlpacaPage />}
