@@ -300,12 +300,13 @@
             );
         }
 
-        function Field({ label, value, onChange, type = "text" }) {
+        function Field({ label, value, onChange, type = "text", placeholder = "" }) {
             return (
                 <label className="block mb-3">
                     <span className="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">{label}</span>
                     <input
                         type={type}
+                        placeholder={placeholder}
                         className="h-10 w-full rounded border border-panelBorder bg-slate-900/50 px-3 text-sm text-slate-200 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
                         value={value}
                         onChange={(e) => onChange(e.target.value)}
@@ -762,9 +763,20 @@
             }, [], 60000);
 
             const [toggling, setToggling] = useState({});
+            const [busy, setBusy] = useState(null);
+            const [formError, setFormError] = useState("");
+
+            const [addSymbol, setAddSymbol] = useState("");
+            const [addName, setAddName] = useState("");
+            const [addType, setAddType] = useState("crypto");
+            const [addCoingecko, setAddCoingecko] = useState("");
+            const [addToWatchlist, setAddToWatchlist] = useState(true);
+
+            const [editing, setEditing] = useState(null);
 
             const toggleWatchlist = async (symbol, inWatchlist) => {
                 setToggling(prev => ({ ...prev, [symbol]: true }));
+                setFormError("");
                 try {
                     if (inWatchlist) {
                         await postApi("/api/watchlist/remove", { symbol });
@@ -773,9 +785,88 @@
                     }
                     await reload();
                 } catch (e) {
-                    alert(e.message);
+                    setFormError(e.message);
                 } finally {
                     setToggling(prev => ({ ...prev, [symbol]: false }));
+                }
+            };
+
+            const submitAddAsset = async (e) => {
+                e.preventDefault();
+                const sym = addSymbol.trim().toUpperCase();
+                if (!sym) {
+                    setFormError("Symbol is required.");
+                    return;
+                }
+                setBusy("add");
+                setFormError("");
+                try {
+                    await postApi("/api/assets/add", {
+                        symbol: sym,
+                        name: addName.trim() || sym,
+                        asset_type: addType,
+                        coingecko_id: addCoingecko.trim() || null,
+                    });
+                    if (addToWatchlist) {
+                        await postApi("/api/watchlist/add", { symbol: sym });
+                    }
+                    setAddSymbol("");
+                    setAddName("");
+                    setAddCoingecko("");
+                    setAddType("crypto");
+                    setAddToWatchlist(true);
+                    await reload();
+                } catch (err) {
+                    setFormError(err.message);
+                } finally {
+                    setBusy(null);
+                }
+            };
+
+            const openEdit = (asset) => {
+                setFormError("");
+                setEditing({
+                    symbol: asset.symbol,
+                    name: asset.name || "",
+                    asset_type: asset.asset_type || "crypto",
+                    coingecko_id: asset.coingecko_id || "",
+                });
+            };
+
+            const submitEdit = async (e) => {
+                e.preventDefault();
+                if (!editing) return;
+                setBusy("edit");
+                setFormError("");
+                try {
+                    await postApi("/api/assets/update", {
+                        symbol: editing.symbol,
+                        name: editing.name.trim() || editing.symbol,
+                        asset_type: editing.asset_type,
+                        coingecko_id: editing.coingecko_id.trim() || null,
+                    });
+                    setEditing(null);
+                    await reload();
+                } catch (err) {
+                    setFormError(err.message);
+                } finally {
+                    setBusy(null);
+                }
+            };
+
+            const deleteAsset = async (symbol) => {
+                if (!confirm(`Remove ${symbol} from the asset universe? It will also be taken off the watchlist. Historical data is kept in the database.`)) {
+                    return;
+                }
+                setBusy(`del:${symbol}`);
+                setFormError("");
+                try {
+                    await postApi("/api/assets/delete", { symbol });
+                    await reload();
+                } catch (err) {
+                    setFormError(err.message);
+                } finally {
+                    setBusy(null);
                 }
             };
 
@@ -784,19 +875,88 @@
             if (loading) return <Loading />;
             if (error) return <div className="text-red-400">Error: {error}</div>;
 
-            const watchlistSymbols = new Set(data.watchlist.map(w => w.symbol));
+            const watchlist = data.watchlist || [];
+            const watchlistSymbols = new Set(watchlist.map(w => w.symbol));
             const assets = data.assets || [];
+            const selectClass = "h-10 w-full rounded border border-panelBorder bg-slate-900/50 px-3 text-sm text-slate-200 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all";
 
             return (
                 <div className="space-y-6 fade-in">
-                    <div>
-                        <h1 className="text-2xl font-bold text-white tracking-tight flex flex-wrap items-center gap-x-3 gap-y-1">
-                            Watchlist & Universe <i data-lucide="list" className="text-primary" style={{ width: 20 }}></i>
-                        </h1>
-                        <p className="text-sm text-slate-400 mt-1">Manage which assets the pipeline monitors.</p>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                            <h1 className="text-2xl font-bold text-white tracking-tight flex flex-wrap items-center gap-x-3 gap-y-1">
+                                Watchlist & Universe <i data-lucide="list" className="text-primary" style={{ width: 20 }}></i>
+                            </h1>
+                            <p className="text-sm text-slate-400 mt-1">
+                                Add or edit assets in the universe, and choose which ones the pipeline scans (database: assets_universe, watchlist).
+                            </p>
+                        </div>
+                        <Button icon="refresh-cw" onClick={reload} className="w-full shrink-0 sm:w-auto">Refresh</Button>
                     </div>
 
-                    <Card title="Asset Universe" eyebrow="Trading Pairs">
+                    {formError && (
+                        <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{formError}</div>
+                    )}
+
+                    <Card title="Pipeline watchlist" eyebrow={`${watchlist.length} active`}>
+                        <p className="mb-4 text-sm text-slate-400">Assets the market-data agent scans on each run.</p>
+                        <Table
+                            rows={watchlist}
+                            rowKey={r => r.symbol}
+                            emptyTitle="Watchlist is empty — add assets below or toggle them in the universe table."
+                            columns={[
+                                { key: "symbol", label: "Symbol", render: r => <span className="font-semibold text-white">{r.symbol}</span> },
+                                { key: "name", label: "Name", render: r => r.name },
+                                { key: "type", label: "Type", render: r => <Badge tone={r.asset_type === "crypto" ? "amber" : "blue"}>{(r.asset_type || "").toUpperCase()}</Badge> },
+                                { key: "added", label: "Added", render: r => <span className="text-slate-400 text-xs whitespace-nowrap">{formatTime(r.added_at)}</span> },
+                                {
+                                    key: "actions", label: "", align: "right", render: r => (
+                                        <Button
+                                            tone="danger"
+                                            className="h-8 px-3 text-xs"
+                                            disabled={toggling[r.symbol] || busy === `del:${r.symbol}`}
+                                            onClick={() => toggleWatchlist(r.symbol, true)}
+                                        >
+                                            {toggling[r.symbol] ? "..." : "Remove"}
+                                        </Button>
+                                    ),
+                                },
+                            ]}
+                        />
+                    </Card>
+
+                    <Card title="Add asset" eyebrow="Universe">
+                        <form onSubmit={submitAddAsset} className="space-y-4">
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                                <Field label="Symbol" value={addSymbol} onChange={setAddSymbol} placeholder="e.g. SOL" />
+                                <Field label="Display name" value={addName} onChange={setAddName} placeholder="Optional" />
+                                <label className="block mb-3">
+                                    <span className="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">Type</span>
+                                    <select className={selectClass} value={addType} onChange={(e) => setAddType(e.target.value)}>
+                                        <option value="crypto">Crypto</option>
+                                        <option value="stock">Stock</option>
+                                    </select>
+                                </label>
+                                <Field label="CoinGecko ID" value={addCoingecko} onChange={setAddCoingecko} placeholder="Crypto only" />
+                            </div>
+                            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
+                                <input
+                                    type="checkbox"
+                                    className="rounded border-slate-600 bg-slate-900 text-primary focus:ring-primary"
+                                    checked={addToWatchlist}
+                                    onChange={(e) => setAddToWatchlist(e.target.checked)}
+                                />
+                                Add to pipeline watchlist immediately
+                            </label>
+                            <div className="flex justify-end">
+                                <Button tone="primary" type="submit" icon="plus" disabled={busy === "add" || !addSymbol.trim()}>
+                                    {busy === "add" ? "Adding..." : "Add asset"}
+                                </Button>
+                            </div>
+                        </form>
+                    </Card>
+
+                    <Card title="Asset universe" eyebrow="Trading pairs">
                         <Table
                             rows={assets}
                             rowKey={r => r.symbol}
@@ -804,27 +964,100 @@
                             columns={[
                                 { key: "symbol", label: "Symbol", render: r => <span className="font-semibold text-white">{r.symbol}</span> },
                                 { key: "name", label: "Name", render: r => r.name },
-                                { key: "type", label: "Type", render: r => <Badge tone={r.asset_type === "crypto" ? "amber" : "blue"}>{r.asset_type.toUpperCase()}</Badge> },
+                                { key: "type", label: "Type", render: r => <Badge tone={r.asset_type === "crypto" ? "amber" : "blue"}>{(r.asset_type || "").toUpperCase()}</Badge> },
+                                { key: "cg", label: "CoinGecko", render: r => <span className="text-slate-400 text-xs">{r.coingecko_id || "—"}</span> },
                                 {
                                     key: "status", label: "Watchlist", render: r => {
                                         const inW = watchlistSymbols.has(r.symbol);
                                         return (
                                             <button
-                                                disabled={toggling[r.symbol]}
+                                                type="button"
+                                                disabled={toggling[r.symbol] || !!busy}
                                                 onClick={() => toggleWatchlist(r.symbol, inW)}
                                                 className={classNames(
-                                                    "px-3 py-1 rounded text-xs font-medium transition-colors",
-                                                    inW ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30" : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+                                                    "min-h-[36px] rounded px-3 py-1.5 text-xs font-medium transition-colors",
+                                                    inW ? "bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30" : "bg-slate-800 text-slate-400 hover:bg-slate-700",
                                                 )}
                                             >
-                                                {toggling[r.symbol] ? "..." : (inW ? "Active" : "Add")}
+                                                {toggling[r.symbol] ? "..." : (inW ? "On watchlist" : "Add to watchlist")}
                                             </button>
                                         );
-                                    }
+                                    },
+                                },
+                                {
+                                    key: "actions", label: "Actions", align: "right", render: r => (
+                                        <div className="flex flex-wrap justify-end gap-2">
+                                            <Button
+                                                className="h-8 px-3 text-xs"
+                                                icon="pencil"
+                                                disabled={!!busy}
+                                                onClick={() => openEdit(r)}
+                                            >
+                                                Edit
+                                            </Button>
+                                            <Button
+                                                tone="danger"
+                                                className="h-8 px-3 text-xs"
+                                                icon="trash-2"
+                                                disabled={busy === `del:${r.symbol}` || !!busy}
+                                                onClick={() => deleteAsset(r.symbol)}
+                                            >
+                                                {busy === `del:${r.symbol}` ? "..." : "Delete"}
+                                            </Button>
+                                        </div>
+                                    ),
                                 },
                             ]}
                         />
                     </Card>
+
+                    {editing && (
+                        <div
+                            className="fixed inset-0 z-[60] flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center sm:p-6"
+                            onClick={() => !busy && setEditing(null)}
+                            role="presentation"
+                        >
+                            <div
+                                className="w-full max-w-lg rounded-xl border border-panelBorder bg-slate-900 shadow-glass"
+                                onClick={(e) => e.stopPropagation()}
+                                role="dialog"
+                                aria-labelledby="edit-asset-title"
+                            >
+                                <div className="flex items-center justify-between border-b border-panelBorder px-4 py-3 sm:px-5">
+                                    <h2 id="edit-asset-title" className="text-base font-semibold text-white">Edit {editing.symbol}</h2>
+                                    <button type="button" className="text-slate-400 hover:text-white p-1" onClick={() => setEditing(null)} aria-label="Close">
+                                        <i data-lucide="x" style={{ width: 20, height: 20 }}></i>
+                                    </button>
+                                </div>
+                                <form onSubmit={submitEdit} className="space-y-4 p-4 sm:p-5">
+                                    <Field label="Display name" value={editing.name} onChange={(v) => setEditing((prev) => ({ ...prev, name: v }))} />
+                                    <label className="block mb-3">
+                                        <span className="mb-1 block text-xs font-medium uppercase tracking-wider text-slate-400">Type</span>
+                                        <select
+                                            className={selectClass}
+                                            value={editing.asset_type}
+                                            onChange={(e) => setEditing((prev) => ({ ...prev, asset_type: e.target.value }))}
+                                        >
+                                            <option value="crypto">Crypto</option>
+                                            <option value="stock">Stock</option>
+                                        </select>
+                                    </label>
+                                    <Field
+                                        label="CoinGecko ID"
+                                        value={editing.coingecko_id}
+                                        onChange={(v) => setEditing((prev) => ({ ...prev, coingecko_id: v }))}
+                                        placeholder="Leave empty for stocks"
+                                    />
+                                    <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+                                        <Button type="button" disabled={busy === "edit"} onClick={() => setEditing(null)}>Cancel</Button>
+                                        <Button tone="primary" type="submit" icon="save" disabled={busy === "edit"}>
+                                            {busy === "edit" ? "Saving..." : "Save changes"}
+                                        </Button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         }
