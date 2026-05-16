@@ -377,7 +377,7 @@ def log_signal(state: dict, run_id: str) -> int | None:
             target=decision.get("target"),
             stop_loss=decision.get("stop_loss"),
             reasoning=decision.get("reasoning"),
-            run_id=run_id,
+            run_id=None,
         )
         session.add(signal)
         session.commit()
