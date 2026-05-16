@@ -165,3 +165,7 @@
 2026-05-16 12:41:04,664 [INFO] Pipeline triggered
 2026-05-16 12:41:07,519 [INFO] Pipeline complete — alert_sent=False errors=0
 2026-05-16 12:41:07,519 [INFO] Done.
+2026-05-16 12:52:18,218 [INFO] Running once...
+2026-05-16 12:52:18,232 [INFO] Pipeline triggered
+2026-05-16 12:52:19,266 [INFO] Pipeline complete — alert_sent=False errors=0
+2026-05-16 12:52:19,266 [INFO] Done.
