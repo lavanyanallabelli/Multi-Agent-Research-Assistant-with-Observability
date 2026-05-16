@@ -385,7 +385,8 @@ def api_run_backtest(symbol: str, days: int = 90, hold_days: int = 3):
                 "accuracy":       result.get("accuracy", 0),
                 "avg_gain":       result.get("avg_gain", 0),
                 "avg_loss":       result.get("avg_loss", 0),
-                "max_drawdown":   result.get("max_drawdown_pct", 0),
+                "max_drawdown":    result.get("max_drawdown_pct", 0),
+                "max_drawdown_pct": result.get("max_drawdown_pct", 0),
                 "longest_streak": result.get("longest_losing_streak", 0),
                 "trades":         result.get("trades", [])[-10:],
             }
