@@ -2,16 +2,27 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from config import LIVE_TRADING
+from config import LIVE_TRADING, ALPACA_API_KEY, ALPACA_SECRET_KEY
 
-ALPACA_API_KEY    = os.getenv("ALPACA_API_KEY")
-ALPACA_SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
-ALPACA_BASE_URL   = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+
+def _alpaca_keys_missing_reason() -> str | None:
+    """Alpaca SDK raises 'You must supply a method of authentication' if keys are empty."""
+    key = (ALPACA_API_KEY or "").strip()
+    sec = (ALPACA_SECRET_KEY or "").strip()
+    if not key or not sec:
+        return (
+            "Alpaca keys missing on this process: set ALPACA_API_KEY and ALPACA_SECRET_KEY "
+            "(e.g. Railway Variables on the web service that runs the dashboard, not only the worker)."
+        )
+    return None
 
 
 def _get_client():
+    missing = _alpaca_keys_missing_reason()
+    if missing:
+        raise ValueError(missing)
     from alpaca.trading.client import TradingClient
-    return TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=not LIVE_TRADING)
+    return TradingClient(ALPACA_API_KEY.strip(), ALPACA_SECRET_KEY.strip(), paper=not LIVE_TRADING)
 
 
 def buy_stock(symbol: str, qty: float) -> dict:
