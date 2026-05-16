@@ -224,7 +224,7 @@ class NewAssetRequest(BaseModel):
     symbol: str
     name: str
     asset_type: str
-    coingecko_id: str = None
+    coingecko_id: Optional[str] = None
 
 
 class UpdateAssetRequest(BaseModel):

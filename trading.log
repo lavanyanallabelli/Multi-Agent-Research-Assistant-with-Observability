@@ -153,3 +153,7 @@
 2026-05-16 00:33:57,974 [INFO] HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
 2026-05-16 00:34:03,259 [INFO] Pipeline complete — alert_sent=True errors=0
 2026-05-16 00:34:03,260 [INFO] Done.
+2026-05-16 12:26:04,777 [INFO] Running once...
+2026-05-16 12:26:04,795 [INFO] Pipeline triggered
+2026-05-16 12:26:07,594 [INFO] Pipeline complete — alert_sent=False errors=0
+2026-05-16 12:26:07,644 [INFO] Done.
