@@ -37,12 +37,33 @@ def calculate_indicators(ohlcv: list[dict]) -> dict:
         macd_df    = df.ta.macd(fast=12, slow=26, signal=9) #the three MACD numbers are industry standard:
         bb_df      = df.ta.bbands(length=20) #Bollinger Bands using 20 periods. Also industry standard.
 
+        def _last_bb(bb: pd.DataFrame, prefix: str) -> float | None:
+            """pandas_ta BB column names vary by version / MultiIndex — avoid KeyError on BBU_20_2.0."""
+            if bb is None or getattr(bb, "empty", True):
+                return None
+            needle = prefix.upper()
+            for col in bb.columns:
+                flat = col if isinstance(col, str) else "_".join(str(p) for p in col) if isinstance(col, tuple) else str(col)
+                if flat.upper().startswith(needle):
+                    v = bb[col].iloc[-1]
+                    return float(v) if pd.notna(v) else None
+            return None
+
+        def _last_macd(m: pd.DataFrame, suffix: str) -> float | None:
+            if m is None or m.empty:
+                return None
+            for col in m.columns:
+                if str(col).endswith(suffix):
+                    v = m[col].iloc[-1]
+                    return float(v) if pd.notna(v) else None
+            return None
+
         rsi_val    = float(rsi.iloc[-1])        if rsi is not None and len(rsi) > 0        else None
-        macd_val   = float(macd_df["MACD_12_26_9"].iloc[-1])   if macd_df is not None else None
-        signal_val = float(macd_df["MACDs_12_26_9"].iloc[-1])  if macd_df is not None else None
-        bb_upper   = float(bb_df["BBU_20_2.0"].iloc[-1])       if bb_df is not None   else None
-        bb_lower   = float(bb_df["BBL_20_2.0"].iloc[-1])       if bb_df is not None   else None
-        bb_mid     = float(bb_df["BBM_20_2.0"].iloc[-1])       if bb_df is not None   else None
+        macd_val   = _last_macd(macd_df, "MACD_12_26_9")
+        signal_val = _last_macd(macd_df, "MACDs_12_26_9")
+        bb_upper   = _last_bb(bb_df, "BBU_")
+        bb_lower   = _last_bb(bb_df, "BBL_")
+        bb_mid     = _last_bb(bb_df, "BBM_")
 
     else:
         rsi_val    = float(ta_lib.momentum.RSIIndicator(df["close"], window=14).rsi().iloc[-1])
